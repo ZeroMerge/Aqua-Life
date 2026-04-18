@@ -45,7 +45,7 @@ function SensorCard({ sensorKey, states }: { sensorKey: string; states: any }) {
   const statusColor = getStatusColor(state.status);
 
   return (
-    <div className="bg-white border border-black/5 shadow-sm rounded-[6px] p-4 flex flex-col justify-between h-full min-h-[140px] transition-all duration-300">
+    <div className="bg-white border border-black/5 shadow-sm rounded-[6px] p-3 sm:p-4 flex flex-col justify-between h-full min-h-[140px] transition-all duration-300">
       <div className="flex items-center justify-between mb-2">
         <span className="text-[13px] font-medium text-al-mid-gray tracking-tight">
           {state.label}
@@ -84,7 +84,7 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
 
   return (
     <div className="max-w-[1400px] mx-auto w-full">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
 
         {/* Redesigned Apple-Style Alert Log */}
         {hasAlert && (
@@ -95,7 +95,7 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
             <div className="flex items-start gap-3">
               <div className="mt-1.5 w-2.5 h-2.5 rounded-full bg-[#ff3b30] shadow-sm animate-critical-pulse shrink-0" />
               <div className="flex flex-col gap-1.5">
-                <span className="text-[14px] font-semibold text-[#ff3b30] tracking-tight">System Critical Alerts</span>
+                <span className="text-[14px] font-semibold text-[#ff3b30] tracking-tight">Attention Required</span>
                 <ul className="flex flex-col gap-1.5">
                   {alerts.map((msg, i) => (
                     <li key={i} className="text-[13px] font-medium text-al-near-black tracking-tight flex items-start gap-2">
@@ -113,7 +113,7 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
         <div className="col-span-full lg:col-span-2 lg:row-span-2 bg-white border border-black/5 shadow-sm rounded-[6px] overflow-hidden flex flex-col">
           <div className="px-4 py-2.5 border-b border-al-light-gray/50 flex items-center justify-between bg-white z-20">
             <span className="text-[13px] font-medium text-al-near-black tracking-tight">
-              Live Monitor
+              Live View
             </span>
             <div className="flex items-center gap-2 px-2.5 py-1 bg-al-light-gray/30 rounded-[4px]">
               <span className="w-2 h-2 rounded-full shadow-sm" style={{ backgroundColor: getStatusColor(streamStatus) }} />
@@ -135,7 +135,7 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
                 </svg>
               </div>
               <span className="text-[12px] font-medium text-[#86868b] tracking-wide">
-                {STREAM_URL ? 'Connecting to Stream...' : 'No Stream Configured'}
+                {STREAM_URL ? 'Connecting to Camera...' : 'Camera Not Connected'}
               </span>
             </div>
 
@@ -163,7 +163,7 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
         <div className="col-span-full lg:col-span-3 bg-white border border-black/5 shadow-sm rounded-[6px] p-5 flex flex-col justify-center animate-in fade-in duration-500">
           <div className="flex items-center justify-between mb-4">
             <span className="text-[14px] font-medium text-al-near-black tracking-tight">
-              Behavioral & System Intelligence
+              System Status
             </span>
             <span className="flex h-2.5 w-2.5 relative">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#34c759] opacity-50"></span>
@@ -171,35 +171,35 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
             </span>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 divide-x divide-al-light-gray/50">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 divide-y md:divide-y-0 md:divide-x divide-al-light-gray/50">
 
             {/* Metric 1 */}
-            <div className="flex flex-col pl-0">
-              <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">Tank Occupancy</span>
+            <div className="flex flex-col pl-0 pt-0">
+              <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">Population</span>
               <span className="text-[17px] font-semibold text-al-near-black tracking-tight">
-                {fishCount != null ? `${fishCount} Detected` : 'Scanning...'}
+                {fishCount != null ? `${fishCount} Visible` : 'Detecting...'}
               </span>
             </div>
 
             {/* Metric 2 */}
-            <div className="flex flex-col pl-4">
-              <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">Vision Link</span>
+            <div className="flex flex-col pl-0 md:pl-4 pt-4 md:pt-0">
+              <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">Camera Connection</span>
               <span className={`text-[17px] font-semibold tracking-tight ${streamStatus === 'online' ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>
-                {streamStatus === 'online' ? 'Active (YOLOv8)' : 'Signal Lost'}
+                {streamStatus === 'online' ? 'Connected' : 'Offline'}
               </span>
             </div>
 
             {/* Metric 3 */}
-            <div className="flex flex-col pl-4">
-              <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">Edge Temp</span>
+            <div className="flex flex-col pl-0 md:pl-4 pt-4 md:pt-0">
+              <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">Processor Heat</span>
               <span className="text-[17px] font-semibold text-al-near-black tracking-tight tabular-nums">
                 {telemetry?.core_temp ? `${telemetry.core_temp.toFixed(1)}°C` : '--°C'}
               </span>
             </div>
 
             {/* Metric 4 */}
-            <div className="flex flex-col pl-4">
-              <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">System Uptime</span>
+            <div className="flex flex-col pl-0 md:pl-4 pt-4 md:pt-0">
+              <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">Operating Time</span>
               <span className="text-[17px] font-semibold text-al-near-black tabular-nums tracking-tight">
                 {formatUptime(telemetry?.uptime_seconds)}
               </span>

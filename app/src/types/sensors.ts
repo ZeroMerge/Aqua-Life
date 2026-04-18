@@ -1,6 +1,6 @@
 export type SensorStatus = 'safe' | 'warning' | 'critical';
 
-export type SensorKey = 'ph' | 'temperature' | 'turbidity' | 'dissolved_oxygen' | 'avg_speed';
+export type SensorKey = 'ph' | 'temperature' | 'turbidity' | 'dissolved_oxygen' | 'avg_speed' | 'fish_count';
 
 export interface SensorLog {
   id: number;
@@ -9,6 +9,10 @@ export interface SensorLog {
   turbidity?: number;
   dissolved_oxygen?: number;
   avg_speed?: number;
+  fish_count?: number;
+  // x_pos and y_pos are for the Heatmap (0-100 normalized)
+  x_pos?: number;
+  y_pos?: number;
   timestamp: string;
 }
 

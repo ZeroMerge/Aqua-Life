@@ -11,16 +11,13 @@
     box-sizing: border-box;
   }
 
-  html {
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
-  }
-
-  body {
+  html, body {
     @apply bg-al-off-white text-al-near-black font-sans;
     font-size: 15px;
     line-height: 1.5;
+    overflow-x: hidden;
+    width: 100%;
+    position: relative;
   }
 
   /* Scrollbar — minimal, system-level feel */
@@ -68,5 +65,18 @@
 
   .glass-panel-dark {
     @apply bg-al-near-black/70 backdrop-blur-xl border border-al-dark-gray/30 shadow-sm;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .mask-fade-edges {
+    mask-image: linear-gradient(to right, transparent, black 30px, black calc(100% - 30px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 30px, black calc(100% - 30px), transparent);
   }
 }

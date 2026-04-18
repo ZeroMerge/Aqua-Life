@@ -16,17 +16,17 @@ interface AnalyticsProps {
 type TimeWindow = '15m' | '1h' | '6h' | 'all';
 
 const TIME_WINDOWS: { id: TimeWindow; label: string; ms: number }[] = [
-  { id: '15m', label: '15 min', ms: 15 * 60 * 1000 },
-  { id: '1h', label: '1 hr', ms: 60 * 60 * 1000 },
-  { id: '6h', label: '6 hr', ms: 6 * 60 * 60 * 1000 },
-  { id: 'all', label: 'All', ms: Infinity },
+  { id: '15m', label: '15 Min', ms: 15 * 60 * 1000 },
+  { id: '1h', label: '1 Hour', ms: 60 * 60 * 1000 },
+  { id: '6h', label: '6 Hours', ms: 6 * 60 * 60 * 1000 },
+  { id: 'all', label: 'All Time', ms: Infinity },
 ];
 
 const SENSOR_CONFIG: { key: SensorKey; label: string; decimals: number }[] = [
-  { key: 'ph', label: 'pH Levels', decimals: 2 },
-  { key: 'temperature', label: 'Temperature', decimals: 1 },
-  { key: 'turbidity', label: 'Turbidity', decimals: 1 },
-  { key: 'dissolved_oxygen', label: 'Dissolved Oxygen', decimals: 1 },
+  { key: 'ph', label: 'Water Balance', decimals: 2 },
+  { key: 'temperature', label: 'Water Comfort', decimals: 1 },
+  { key: 'turbidity', label: 'Water Clarity', decimals: 1 },
+  { key: 'dissolved_oxygen', label: 'Oxygen Level', decimals: 1 },
 ];
 
 export default function Analytics({ logs }: AnalyticsProps) {
@@ -83,7 +83,7 @@ export default function Analytics({ logs }: AnalyticsProps) {
     return (
       <Card className="w-full">
         <CardHeader className="pb-2">
-          <CardTitle className="text-[15px] text-al-mid-gray font-medium uppercase tracking-wider">{label}</CardTitle>
+          <CardTitle className="text-[13px] text-al-dark-gray font-bold uppercase tracking-widest">{label}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-[250px] w-full mt-4">
@@ -140,8 +140,8 @@ export default function Analytics({ logs }: AnalyticsProps) {
               key={tw.id}
               onClick={() => setWindow(tw.id)}
               className={`px-4 py-1.5 text-[13px] font-medium rounded-[6px] transition-all duration-300 ${window === tw.id
-                  ? 'bg-white text-al-near-black shadow-sm'
-                  : 'text-al-mid-gray hover:text-al-near-black'
+                ? 'bg-white text-al-near-black shadow-sm'
+                : 'text-al-mid-gray hover:text-al-near-black'
                 }`}
             >
               {tw.label}
@@ -151,7 +151,7 @@ export default function Analytics({ logs }: AnalyticsProps) {
         <div className="flex items-center gap-2 px-4 py-1.5 bg-al-safe/10 text-al-safe rounded-[6px] w-fit">
           <span className="w-1.5 h-1.5 rounded-full bg-al-safe animate-pulse" />
           <span className="text-[13px] font-medium">
-            {filteredData.length} Data Points
+            {filteredData.length} Live Readings
           </span>
         </div>
       </div>
