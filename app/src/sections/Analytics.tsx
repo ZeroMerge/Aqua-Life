@@ -23,9 +23,9 @@ const TIME_WINDOWS: { id: TimeWindow; label: string; ms: number }[] = [
 ];
 
 const SENSOR_CONFIG: { key: SensorKey; label: string; decimals: number }[] = [
-  { key: 'ph', label: 'Water Balance', decimals: 2 },
-  { key: 'temperature', label: 'Water Comfort', decimals: 1 },
-  { key: 'turbidity', label: 'Water Clarity', decimals: 1 },
+  { key: 'ph', label: 'Water PH', decimals: 2 },
+  { key: 'temperature', label: 'Water Temperature', decimals: 1 },
+  { key: 'turbidity', label: 'Water Turbidity', decimals: 1 },
   { key: 'dissolved_oxygen', label: 'Oxygen Level', decimals: 1 },
 ];
 
