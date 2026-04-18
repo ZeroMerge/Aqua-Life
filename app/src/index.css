@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-al-off-white text-al-near-black font-sans;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  /* Scrollbar — minimal, system-level feel */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-al-light-gray rounded-full border-2 border-solid border-transparent bg-clip-padding;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-al-mid-gray;
+  }
+}
+
+@layer components {
+
+  /* Status dot pulse — only for critical */
+  .status-pulse-critical {
+    animation: pulse-critical 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse-critical {
+
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.4;
+    }
+  }
+
+  /* Apple Vibrancy / Glassmorphism Utilities */
+  .glass-panel {
+    @apply bg-al-white/70 backdrop-blur-xl border border-al-white/20 shadow-sm;
+  }
+
+  .glass-panel-dark {
+    @apply bg-al-near-black/70 backdrop-blur-xl border border-al-dark-gray/30 shadow-sm;
+  }
+}
