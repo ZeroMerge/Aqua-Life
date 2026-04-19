@@ -42,6 +42,9 @@ function getHeatmapPalette() {
     return ctx.getImageData(0, 0, 1, 256).data;
 }
 
+// ---------------------------------------------------------
+// COMPONENT: Ecosystem Tooltip (Diagnostic Brain)
+// ---------------------------------------------------------
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const EcosystemDiagnosticTooltip = ({ active, payload, speedThreshold }: any) => {
     if (!active || !payload || !payload.length) return null;
@@ -151,6 +154,7 @@ export default function Insights({ logs }: InsightsProps) {
         if (heatmapPoints.length === 0) return;
 
         // Auto-Normalization: Dynamically scale the brush opacity based on data volume
+        // This prevents 5 points from being invisible, and 5000 points from turning into a solid red block.
         const dynamicAlpha = Math.max(0.015, Math.min(0.2, 8 / heatmapPoints.length));
 
         // Step A: Draw black blurred alpha circles where the fish went
@@ -176,10 +180,18 @@ export default function Insights({ logs }: InsightsProps) {
         for (let i = 0; i < data.length; i += 4) {
             const alpha = data[i + 3];
             if (alpha > 0) {
+                // Map the 0-255 alpha value to the 256-color palette index
                 const paletteOffset = alpha * 4;
-                data[i] = palette[paletteOffset];
-                data[i + 1] = palette[paletteOffset + 1];
-                data[i + 2] = palette[paletteOffset + 2];
+                const r = palette![paletteOffset];
+                const g = palette![paletteOffset + 1];
+                const b = palette![paletteOffset + 2];
+
+                if (r !== undefined && g !== undefined && b !== undefined) {
+                    data[i] = r;
+                    data[i + 1] = g;
+                    data[i + 2] = b;
+                }
+                // Keep original alpha for smooth, transparent edges over the grid
                 data[i + 3] = alpha;
             }
         }
@@ -208,27 +220,27 @@ export default function Insights({ logs }: InsightsProps) {
     // TOOL 3: Layered Ecosystem Chart & Diagnostic Brain
     // ---------------------------------------------------------
     const ecosystemData = useMemo(() => {
-        const results = [];
-        let currentTemp = 25.0;
-        let currentPh = 7.0;
-        let currentDo = 6.0;
-        let currentSpeed = 0;
+        let temp = 25.0;
+        let ph = 7.0;
+        let do_val = 6.0;
+        let speed = 0;
 
+        const result = [];
         for (const log of filteredLogs) {
-            if (log.temperature != null) currentTemp = log.temperature;
-            if (log.ph != null) currentPh = log.ph;
-            if (log.dissolved_oxygen != null) currentDo = log.dissolved_oxygen;
-            if (log.avg_speed != null) currentSpeed = log.avg_speed;
+            if (log.temperature != null) temp = log.temperature;
+            if (log.ph != null) ph = log.ph;
+            if (log.dissolved_oxygen != null) do_val = log.dissolved_oxygen;
+            if (log.avg_speed != null) speed = log.avg_speed;
 
-            results.push({
+            result.push({
                 time: new Date(log.timestamp).getTime(),
-                temp: currentTemp,
-                ph: currentPh,
-                do: currentDo,
-                speed: currentSpeed
+                temp,
+                ph,
+                do: do_val,
+                speed
             });
         }
-        return results;
+        return result;
     }, [filteredLogs]);
 
     return (
@@ -284,11 +296,13 @@ export default function Insights({ logs }: InsightsProps) {
 
                             {/* Main Canvas & Grid Container */}
                             <div className="relative flex-1 bg-white border-y border-black/5 overflow-hidden">
+                                {/* Dotted Cartesian Grid Background */}
                                 <div
                                     className="absolute inset-0 pointer-events-none opacity-40"
                                     style={{ backgroundImage: 'radial-gradient(#8e8e93 1px, transparent 1px)', backgroundSize: '24px 24px' }}
                                 />
 
+                                {/* 640x480 native aspect ratio canvas for mapping */}
                                 <canvas
                                     ref={canvasRef}
                                     width={640}
@@ -319,6 +333,7 @@ export default function Insights({ logs }: InsightsProps) {
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                         <h3 className="text-[13px] font-bold text-al-dark-gray uppercase tracking-widest">Average Speed Over Time</h3>
 
+                        {/* Dynamic Threshold Input */}
                         <div className="flex items-center gap-2 bg-al-light-gray/30 px-3 py-1.5 rounded-[6px]">
                             <span className="text-[11px] font-bold text-al-dark-gray uppercase">Danger Limit:</span>
                             <input
@@ -335,6 +350,7 @@ export default function Insights({ logs }: InsightsProps) {
                         <ResponsiveContainer width="100%" height="100%">
                             <AreaChart data={rollingSpeedData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
                                 <defs>
+                                    {/* The Dynamic Bleed Gradient */}
                                     <linearGradient id="colorSpeedBleed" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="0%" stopColor="#ff3b30" stopOpacity={0.8} />
                                         <stop offset={`${thresholdPercent}%`} stopColor="#ff3b30" stopOpacity={0.6} />
@@ -408,13 +424,16 @@ export default function Insights({ logs }: InsightsProps) {
                                     fontSize={10} axisLine={false} tickLine={false}
                                 />
 
+                                {/* Hidden Multiple Y-Axes to normalize the scales */}
                                 <YAxis yAxisId="temp" domain={['dataMin - 2', 'dataMax + 2']} hide />
                                 <YAxis yAxisId="do" domain={[0, 10]} hide />
                                 <YAxis yAxisId="ph" domain={[5, 9]} hide />
                                 <YAxis yAxisId="speed" domain={[0, 'dataMax']} hide />
 
+                                {/* The Diagnostic Brain Tooltip */}
                                 <Tooltip content={<EcosystemDiagnosticTooltip speedThreshold={speedThreshold} />} isAnimationActive={false} />
 
+                                {/* The Smooth Layered Waves */}
                                 <Area yAxisId="temp" type="monotone" dataKey="temp" stroke="#ff9500" strokeWidth={2} fill="url(#gradTemp)" isAnimationActive={false} />
                                 <Area yAxisId="do" type="monotone" dataKey="do" stroke="#32ade6" strokeWidth={2} fill="url(#gradDO)" isAnimationActive={false} />
                                 <Area yAxisId="ph" type="monotone" dataKey="ph" stroke="#af52de" strokeWidth={2} fill="none" isAnimationActive={false} />

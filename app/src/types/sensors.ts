@@ -14,7 +14,7 @@ export interface SensorLog {
   x_pos?: number;
   y_pos?: number;
   timestamp: string;
-  [key: string]: string | number | undefined;
+  [key: string]: string | number | boolean | undefined;
 }
 
 export interface SensorState {
