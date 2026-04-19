@@ -1,29 +1,118 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-    ResponsiveContainer, ScatterChart, Scatter, ZAxis
+    ResponsiveContainer, ReferenceLine
 } from 'recharts';
 import { Card } from '@/components/ui/card';
 import type { SensorLog } from '@/types/sensors';
+import { format } from 'date-fns';
 
 interface InsightsProps {
     logs: SensorLog[];
 }
 
-type TimeWindow = '24h' | '7d' | 'all';
-type ScatterAxis = 'temperature' | 'ph' | 'dissolved_oxygen';
+type TimeWindow = '1h' | '24h' | '7d' | 'all';
 
 const TIME_WINDOWS: { id: TimeWindow; label: string; ms: number }[] = [
+    { id: '1h', label: 'Last 1 Hour', ms: 60 * 60 * 1000 },
     { id: '24h', label: 'Last 24 Hours', ms: 24 * 60 * 60 * 1000 },
     { id: '7d', label: 'Last 7 Days', ms: 7 * 24 * 60 * 60 * 1000 },
     { id: 'all', label: 'All Time', ms: Infinity },
 ];
 
-export default function Insights({ logs }: InsightsProps) {
-    const [timeWindow, setTimeWindow] = useState<TimeWindow>('24h');
-    const [scatterAxis, setScatterAxis] = useState<ScatterAxis>('temperature');
+// Helper: Generates a 256-color thermal gradient array for the light-mode canvas heatmap
+function getHeatmapPalette() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return new Uint8ClampedArray(0);
 
-    // Filter logs based on the selected time window
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    // Light Mode Thermal Palette (White -> Yellow -> Orange -> Red)
+    grad.addColorStop(0, "rgba(255, 255, 255, 0)");      // Transparent base
+    grad.addColorStop(0.15, "rgba(255, 255, 204, 0.8)"); // Pale Yellow
+    grad.addColorStop(0.4, "rgba(255, 237, 160, 1)");    // Bright Yellow
+    grad.addColorStop(0.65, "rgba(254, 178, 76, 1)");    // Orange
+    grad.addColorStop(0.85, "rgba(240, 59, 32, 1)");     // Orange-Red
+    grad.addColorStop(1, "rgba(189, 0, 38, 1)");         // Deep Red
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 1, 256);
+    return ctx.getImageData(0, 0, 1, 256).data;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const EcosystemDiagnosticTooltip = ({ active, payload, speedThreshold }: any) => {
+    if (!active || !payload || !payload.length) return null;
+
+    const data = payload[0].payload;
+
+    let status = "Ecosystem Stable";
+    let statusColor = "bg-[#34c759]"; // Green
+    let statusTextColor = "text-[#34c759]";
+
+    if (data.do < 4.0 && data.speed > speedThreshold) {
+        status = "Hypoxia Panic / Suffocation Risk";
+        statusColor = "bg-[#ff3b30]";
+        statusTextColor = "text-[#ff3b30]";
+    } else if (data.temp > 29.0 && data.do < 5.0) {
+        status = "Heat Stress / Depleted Oxygen";
+        statusColor = "bg-[#ff9500]";
+        statusTextColor = "text-[#ff9500]";
+    } else if (data.temp < 22.0) {
+        status = "Cold Shock Risk";
+        statusColor = "bg-[#007aff]";
+        statusTextColor = "text-[#007aff]";
+    } else if (data.ph < 6.5 || data.ph > 8.0) {
+        status = "pH Imbalance";
+        statusColor = "bg-[#ffcc00]";
+        statusTextColor = "text-[#ffcc00]";
+    } else if (data.speed > speedThreshold) {
+        status = "Unexplained High Activity / Panic";
+        statusColor = "bg-[#ff3b30]";
+        statusTextColor = "text-[#ff3b30]";
+    }
+
+    return (
+        <div className="bg-white/95 backdrop-blur-md p-4 rounded-[8px] shadow-xl border border-black/5 min-w-[240px]">
+            <p className="text-[12px] font-bold text-al-mid-gray mb-3 border-b border-black/5 pb-2 uppercase tracking-wider">
+                {format(new Date(data.time), 'MMM d, HH:mm:ss')}
+            </p>
+
+            <div className="grid grid-cols-2 gap-y-2 gap-x-4 mb-4">
+                <div className="flex flex-col">
+                    <span className="text-[11px] text-al-mid-gray">Temperature</span>
+                    <span className="text-[14px] font-semibold text-[#ff9500]">{data.temp.toFixed(1)}°C</span>
+                </div>
+                <div className="flex flex-col">
+                    <span className="text-[11px] text-al-mid-gray">Oxygen</span>
+                    <span className="text-[14px] font-semibold text-[#32ade6]">{data.do.toFixed(1)} mg/L</span>
+                </div>
+                <div className="flex flex-col">
+                    <span className="text-[11px] text-al-mid-gray">Water pH</span>
+                    <span className="text-[14px] font-semibold text-[#af52de]">{data.ph.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col">
+                    <span className="text-[11px] text-al-mid-gray">Fish Speed</span>
+                    <span className="text-[14px] font-semibold text-al-near-black">{data.speed.toFixed(1)} px/s</span>
+                </div>
+            </div>
+
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-[6px] bg-black/5`}>
+                <div className={`w-2 h-2 rounded-full shadow-sm ${statusColor} animate-pulse`} />
+                <span className={`text-[12px] font-bold ${statusTextColor}`}>{status}</span>
+            </div>
+        </div>
+    );
+};
+
+export default function Insights({ logs }: InsightsProps) {
+    const [timeWindow, setTimeWindow] = useState<TimeWindow>('1h');
+    const [speedThreshold, setSpeedThreshold] = useState<number>(50);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    // 1. Master Filter: Slice logs by the selected time window
     const filteredLogs = useMemo(() => {
         if (logs.length === 0) return [];
         if (timeWindow === 'all') return logs;
@@ -37,84 +126,122 @@ export default function Insights({ logs }: InsightsProps) {
 
     const hasTrackingData = useMemo(() => filteredLogs.some(l => l.x_pos != null), [filteredLogs]);
 
-    // 1. Heatmap Data Processing (10x10 grid) - Now uses filteredLogs
-    const heatmapData = useMemo(() => {
-        const grid = Array(10).fill(0).map(() => Array(10).fill(0));
-        filteredLogs.forEach(log => {
-            if (log.x_pos != null && log.y_pos != null) {
-                const x = Math.floor(Math.min(log.x_pos, 99) / 10);
-                const y = Math.floor(Math.min(log.y_pos, 99) / 10);
-                grid[y][x] += 1;
-            }
-        });
-        return grid;
+    // ---------------------------------------------------------
+    // TOOL 1: Organic Scientific Heatmap Data Extraction
+    // ---------------------------------------------------------
+    const heatmapPoints = useMemo(() => {
+        return filteredLogs
+            .filter(l => l.x_pos != null && l.y_pos != null)
+            .map(l => ({ x: l.x_pos as number, y: l.y_pos as number }));
     }, [filteredLogs]);
 
-    // 2. Average Fish Speed Processing - Now uses filteredLogs
-    const rhythmData = useMemo(() => {
-        const hourlyMap: Record<number, { count: number, totalSpeed: number }> = {};
-        filteredLogs.forEach(log => {
-            const hour = new Date(log.timestamp).getHours();
-            if (!hourlyMap[hour]) hourlyMap[hour] = { count: 0, totalSpeed: 0 };
+    // Draw the HTML5 Canvas Heatmap
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
 
-            if (log.avg_speed != null && log.avg_speed > 0) {
-                hourlyMap[hour].totalSpeed += log.avg_speed;
-                hourlyMap[hour].count += 1;
-            }
+        const width = canvas.width;
+        const height = canvas.height;
+
+        // Clear previous render
+        ctx.clearRect(0, 0, width, height);
+
+        if (heatmapPoints.length === 0) return;
+
+        // Auto-Normalization: Dynamically scale the brush opacity based on data volume
+        const dynamicAlpha = Math.max(0.015, Math.min(0.2, 8 / heatmapPoints.length));
+
+        // Step A: Draw black blurred alpha circles where the fish went
+        heatmapPoints.forEach(point => {
+            const x = (point.x / 100) * width;
+            const y = (point.y / 100) * height;
+
+            const grad = ctx.createRadialGradient(x, y, 0, x, y, 40);
+            grad.addColorStop(0, `rgba(0, 0, 0, ${dynamicAlpha})`);
+            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(x, y, 40, 0, 2 * Math.PI);
+            ctx.fill();
         });
 
-        return Array.from({ length: 24 }, (_, i) => ({
-            hour: `${i}:00`,
-            speed: hourlyMap[i] && hourlyMap[i].count > 0
-                ? (hourlyMap[i].totalSpeed / hourlyMap[i].count).toFixed(1)
-                : 0
-        }));
+        // Step B: Grab the alpha channel and map it to our color palette
+        const imgData = ctx.getImageData(0, 0, width, height);
+        const data = imgData.data;
+        const palette = getHeatmapPalette();
+
+        for (let i = 0; i < data.length; i += 4) {
+            const alpha = data[i + 3];
+            if (alpha > 0) {
+                const paletteOffset = alpha * 4;
+                data[i] = palette[paletteOffset];
+                data[i + 1] = palette[paletteOffset + 1];
+                data[i + 2] = palette[paletteOffset + 2];
+                data[i + 3] = alpha;
+            }
+        }
+
+        ctx.putImageData(imgData, 0, 0);
+    }, [heatmapPoints, timeWindow]);
+
+
+    // ---------------------------------------------------------
+    // TOOL 2: Dynamic Threshold Timeline (Rolling Speed)
+    // ---------------------------------------------------------
+    const rollingSpeedData = useMemo(() => {
+        return filteredLogs
+            .filter(l => l.avg_speed != null)
+            .map(l => ({
+                time: new Date(l.timestamp).getTime(),
+                speed: l.avg_speed || 0
+            }));
     }, [filteredLogs]);
 
-    // 3. Dynamic Scatter Chart (Speed vs Chosen Metric) - Now uses filteredLogs
-    const correlationData = useMemo(() => {
-        const paired = [];
-        let lastKnownMetric: number | null = null;
+    const maxSpeed = Math.max(...rollingSpeedData.map(d => d.speed), 1);
+    const thresholdPercent = Math.max(0, Math.min(100, ((maxSpeed - speedThreshold) / maxSpeed) * 100));
+
+
+    // ---------------------------------------------------------
+    // TOOL 3: Layered Ecosystem Chart & Diagnostic Brain
+    // ---------------------------------------------------------
+    const ecosystemData = useMemo(() => {
+        const results = [];
+        let currentTemp = 25.0;
+        let currentPh = 7.0;
+        let currentDo = 6.0;
+        let currentSpeed = 0;
 
         for (const log of filteredLogs) {
-            // Update the carried metric based on user selection
-            if (log[scatterAxis] != null) {
-                lastKnownMetric = log[scatterAxis] as number;
-            }
-            if (log.avg_speed != null && lastKnownMetric != null && log.avg_speed > 0) {
-                paired.push({
-                    x: lastKnownMetric,
-                    y: log.avg_speed,
-                });
-            }
+            if (log.temperature != null) currentTemp = log.temperature;
+            if (log.ph != null) currentPh = log.ph;
+            if (log.dissolved_oxygen != null) currentDo = log.dissolved_oxygen;
+            if (log.avg_speed != null) currentSpeed = log.avg_speed;
+
+            results.push({
+                time: new Date(log.timestamp).getTime(),
+                temp: currentTemp,
+                ph: currentPh,
+                do: currentDo,
+                speed: currentSpeed
+            });
         }
-
-        // Limit to 150 points so the chart doesn't become a massive unreadable blob
-        return paired.slice(-150);
-    }, [filteredLogs, scatterAxis]);
-
-    // Helper to format axis labels dynamically
-    const getAxisConfig = () => {
-        switch (scatterAxis) {
-            case 'ph': return { name: 'Water pH', unit: ' pH', domain: [6, 8.5] };
-            case 'dissolved_oxygen': return { name: 'Dissolved Oxygen', unit: ' mg/L', domain: ['auto', 'auto'] };
-            default: return { name: 'Water Temperature', unit: '°C', domain: ['auto', 'auto'] };
-        }
-    };
-
-    const axisConfig = getAxisConfig();
+        return results;
+    }, [filteredLogs]);
 
     return (
         <div className="flex flex-col gap-8 animate-in fade-in duration-700">
+            {/* Header & Global Controls */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div className="flex flex-col gap-2">
                     <h2 className="text-[28px] font-semibold tracking-tight text-al-near-black">Life Trends</h2>
                     <p className="text-[15px] text-al-mid-gray max-w-2xl">
-                        Understanding how your fish interact with their environment over time.
+                        Organic behavior mapping and multi-sensor ecosystem diagnostics.
                     </p>
                 </div>
 
-                {/* Global Time Window Filter */}
                 <div className="flex p-1 bg-al-light-gray/50 rounded-[6px] w-fit border border-black/5 shrink-0">
                     {TIME_WINDOWS.map((tw) => (
                         <button
@@ -133,32 +260,110 @@ export default function Insights({ logs }: InsightsProps) {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-                {/* Average Fish Speed (Area Chart) */}
+                {/* 1. Scientific Thermal Heatmap */}
+                <Card className="p-6 bg-white border-black/5 shadow-sm rounded-[6px] flex flex-col relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-4 z-10">
+                        <h3 className="text-[13px] font-bold text-al-dark-gray uppercase tracking-widest">Spatial Heat Map</h3>
+                    </div>
+
+                    {!hasTrackingData && (
+                        <div className="absolute inset-0 z-20 bg-white/60 backdrop-blur-[2px] flex items-center justify-center p-8 text-center rounded-[6px]">
+                            <p className="text-[13px] font-medium text-al-mid-gray">Waiting for AI tracking data...</p>
+                        </div>
+                    )}
+
+                    <div className="flex flex-col w-full">
+                        <div className="flex flex-row items-stretch w-full aspect-[4/3] max-h-[300px]">
+
+                            {/* Y-Axis (Depth) */}
+                            <div className="flex flex-col justify-between items-end pr-2 py-1 border-r border-black/10 text-[10px] font-medium text-al-mid-gray w-8 shrink-0">
+                                <span>0</span>
+                                <span>50</span>
+                                <span>100</span>
+                            </div>
+
+                            {/* Main Canvas & Grid Container */}
+                            <div className="relative flex-1 bg-white border-y border-black/5 overflow-hidden">
+                                <div
+                                    className="absolute inset-0 pointer-events-none opacity-40"
+                                    style={{ backgroundImage: 'radial-gradient(#8e8e93 1px, transparent 1px)', backgroundSize: '24px 24px' }}
+                                />
+
+                                <canvas
+                                    ref={canvasRef}
+                                    width={640}
+                                    height={480}
+                                    className="relative z-10 w-full h-full object-contain mix-blend-multiply"
+                                />
+                            </div>
+
+                            {/* Thermal Scale Legend (Right Side) */}
+                            <div className="w-10 flex flex-col items-center justify-between pl-2 border-l border-black/10 shrink-0 py-1">
+                                <span className="text-[10px] font-medium text-al-mid-gray">High</span>
+                                <div className="w-2.5 flex-1 my-2 rounded-[2px] bg-gradient-to-t from-[#ffffcc] via-[#fd8d3c] to-[#bd0026] border border-black/5 shadow-inner"></div>
+                                <span className="text-[10px] font-medium text-al-mid-gray">Low</span>
+                            </div>
+                        </div>
+
+                        {/* X-Axis (Width) */}
+                        <div className="flex flex-row w-full pl-8 pr-10 mt-1.5 text-[10px] font-medium text-al-mid-gray justify-between">
+                            <span>0</span>
+                            <span>50</span>
+                            <span>100</span>
+                        </div>
+                    </div>
+                </Card>
+
+                {/* 2. Dynamic Threshold Timeline (Fish Speed) */}
                 <Card className="p-6 bg-white border-black/5 shadow-sm rounded-[6px]">
-                    <h3 className="text-[13px] font-bold text-al-dark-gray uppercase tracking-widest mb-6">Average Fish Speed (24hr Cycle)</h3>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                        <h3 className="text-[13px] font-bold text-al-dark-gray uppercase tracking-widest">Average Speed Over Time</h3>
+
+                        <div className="flex items-center gap-2 bg-al-light-gray/30 px-3 py-1.5 rounded-[6px]">
+                            <span className="text-[11px] font-bold text-al-dark-gray uppercase">Danger Limit:</span>
+                            <input
+                                type="number"
+                                value={speedThreshold}
+                                onChange={(e) => setSpeedThreshold(Number(e.target.value))}
+                                className="w-14 bg-white border border-black/10 rounded-[4px] text-center text-[12px] font-medium text-al-near-black py-0.5 focus:outline-none focus:border-[#007aff]"
+                            />
+                            <span className="text-[11px] text-al-mid-gray">px/s</span>
+                        </div>
+                    </div>
+
                     <div className="h-[240px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={rhythmData}>
+                            <AreaChart data={rollingSpeedData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
                                 <defs>
-                                    <linearGradient id="colorSpeed" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#007aff" stopOpacity={0.15} />
-                                        <stop offset="95%" stopColor="#007aff" stopOpacity={0} />
+                                    <linearGradient id="colorSpeedBleed" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#ff3b30" stopOpacity={0.8} />
+                                        <stop offset={`${thresholdPercent}%`} stopColor="#ff3b30" stopOpacity={0.6} />
+                                        <stop offset={`${thresholdPercent}%`} stopColor="#007aff" stopOpacity={0.4} />
+                                        <stop offset="100%" stopColor="#007aff" stopOpacity={0.0} />
                                     </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                <XAxis dataKey="hour" fontSize={10} axisLine={false} tickLine={false} />
+                                <XAxis
+                                    dataKey="time"
+                                    type="number"
+                                    domain={['dataMin', 'dataMax']}
+                                    tickFormatter={(v) => format(new Date(v), 'HH:mm')}
+                                    fontSize={10} axisLine={false} tickLine={false}
+                                />
                                 <YAxis fontSize={10} axisLine={false} tickLine={false} />
                                 <Tooltip
                                     isAnimationActive={false}
+                                    labelFormatter={(v) => format(new Date(v), 'HH:mm:ss')}
                                     contentStyle={{ backgroundColor: '#fff', border: 'none', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
                                 />
+                                <ReferenceLine y={speedThreshold} stroke="#ff3b30" strokeDasharray="3 3" strokeWidth={1.5} opacity={0.6} />
                                 <Area
                                     type="monotone"
                                     dataKey="speed"
-                                    stroke="#007aff"
-                                    strokeWidth={2.5}
+                                    stroke="url(#colorSpeedBleed)"
+                                    strokeWidth={2}
                                     fillOpacity={1}
-                                    fill="url(#colorSpeed)"
+                                    fill="url(#colorSpeedBleed)"
                                     isAnimationActive={false}
                                 />
                             </AreaChart>
@@ -166,94 +371,55 @@ export default function Insights({ logs }: InsightsProps) {
                     </div>
                 </Card>
 
-                {/* Favorite Spots (Heatmap) */}
-                <Card className="p-6 bg-white border-black/5 shadow-sm rounded-[6px] flex flex-col relative overflow-hidden">
-                    <h3 className="text-[13px] font-bold text-al-dark-gray uppercase tracking-widest mb-6">Favorite Spots (Heatmap)</h3>
-
-                    {!hasTrackingData && (
-                        <div className="absolute inset-0 z-10 bg-white/60 backdrop-blur-[2px] flex items-center justify-center p-8 text-center rounded-[6px]">
-                            <p className="text-[13px] font-medium text-al-mid-gray">Waiting for AI tracking data...<br /><span className="text-[11px] opacity-60">Frequented areas will appear here shortly.</span></p>
-                        </div>
-                    )}
-
-                    <div className="flex-1 flex items-center justify-center p-4">
-                        <div className="grid grid-cols-10 gap-0.5 border border-black/5 bg-[#f5f5f7] p-1 rounded-[4px] aspect-video w-full">
-                            {heatmapData.flat().map((val, i) => {
-                                const maxVal = Math.max(...heatmapData.flat(), 1);
-                                const intensity = (val / maxVal);
-                                return (
-                                    <div
-                                        key={i}
-                                        className="w-full h-full rounded-[1px] transition-all duration-1000"
-                                        style={{ backgroundColor: val > 0 ? `rgba(0, 122, 255, ${Math.max(intensity, 0.15)})` : 'transparent' }}
-                                    />
-                                );
-                            })}
-                        </div>
-                    </div>
-                    <p className="text-[11px] text-al-mid-gray mt-4 text-center">Darker blue indicates where your fish spend the most time.</p>
-                </Card>
-
-                {/* Dynamic Scatter Chart (Speed vs Metric) */}
+                {/* 3. Layered Ecosystem Chart & Diagnostic Brain */}
                 <Card className="p-6 bg-white border-black/5 shadow-sm rounded-[6px] lg:col-span-2">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                        <h3 className="text-[13px] font-bold text-al-dark-gray uppercase tracking-widest">Fish Speed vs. Water Chemistry</h3>
-
-                        {/* Interactive Axis Selector */}
-                        <div className="flex gap-2">
-                            {(['temperature', 'ph', 'dissolved_oxygen'] as ScatterAxis[]).map(axis => (
-                                <button
-                                    key={axis}
-                                    onClick={() => setScatterAxis(axis)}
-                                    className={`text-[12px] px-3 py-1 rounded-[4px] transition-colors ${scatterAxis === axis
-                                            ? 'bg-[#007aff] text-white font-medium'
-                                            : 'bg-al-light-gray/30 text-al-mid-gray hover:text-al-near-black'
-                                        }`}
-                                >
-                                    {axis === 'temperature' ? 'Temp' : axis === 'ph' ? 'pH' : 'Oxygen'}
-                                </button>
-                            ))}
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex flex-col gap-1">
+                            <h3 className="text-[13px] font-bold text-al-dark-gray uppercase tracking-widest">Combined Ecosystem State</h3>
+                            <p className="text-[11px] text-al-mid-gray">Hover over the timeline to trigger the Diagnostic Tooltip.</p>
                         </div>
                     </div>
 
-                    <div className="h-[240px] w-full">
+                    <div className="h-[300px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                            <AreaChart data={ecosystemData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="gradTemp" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#ff9500" stopOpacity={0.4} />
+                                        <stop offset="95%" stopColor="#ff9500" stopOpacity={0} />
+                                    </linearGradient>
+                                    <linearGradient id="gradDO" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#32ade6" stopOpacity={0.4} />
+                                        <stop offset="95%" stopColor="#32ade6" stopOpacity={0} />
+                                    </linearGradient>
+                                    <linearGradient id="gradSpeed" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#000000" stopOpacity={0.15} />
+                                        <stop offset="95%" stopColor="#000000" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+
                                 <XAxis
+                                    dataKey="time"
                                     type="number"
-                                    dataKey="x"
-                                    name={axisConfig.name}
-                                    unit={axisConfig.unit}
-                                    fontSize={10}
-                                    axisLine={false}
-                                    tickLine={false}
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    domain={axisConfig.domain as any}
+                                    domain={['dataMin', 'dataMax']}
+                                    tickFormatter={(v) => format(new Date(v), 'HH:mm')}
+                                    fontSize={10} axisLine={false} tickLine={false}
                                 />
-                                <YAxis
-                                    type="number"
-                                    dataKey="y"
-                                    name="Speed"
-                                    unit=" px/s"
-                                    fontSize={10}
-                                    axisLine={false}
-                                    tickLine={false}
-                                />
-                                <ZAxis type="number" range={[60, 60]} />
-                                <Tooltip
-                                    cursor={{ strokeDasharray: '3 3' }}
-                                    isAnimationActive={false}
-                                    contentStyle={{ backgroundColor: '#fff', border: 'none', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
-                                />
-                                <Scatter
-                                    name="Logs"
-                                    data={correlationData}
-                                    fill="#007aff"
-                                    fillOpacity={0.5}
-                                    isAnimationActive={false}
-                                />
-                            </ScatterChart>
+
+                                <YAxis yAxisId="temp" domain={['dataMin - 2', 'dataMax + 2']} hide />
+                                <YAxis yAxisId="do" domain={[0, 10]} hide />
+                                <YAxis yAxisId="ph" domain={[5, 9]} hide />
+                                <YAxis yAxisId="speed" domain={[0, 'dataMax']} hide />
+
+                                <Tooltip content={<EcosystemDiagnosticTooltip speedThreshold={speedThreshold} />} isAnimationActive={false} />
+
+                                <Area yAxisId="temp" type="monotone" dataKey="temp" stroke="#ff9500" strokeWidth={2} fill="url(#gradTemp)" isAnimationActive={false} />
+                                <Area yAxisId="do" type="monotone" dataKey="do" stroke="#32ade6" strokeWidth={2} fill="url(#gradDO)" isAnimationActive={false} />
+                                <Area yAxisId="ph" type="monotone" dataKey="ph" stroke="#af52de" strokeWidth={2} fill="none" isAnimationActive={false} />
+                                <Area yAxisId="speed" type="monotone" dataKey="speed" stroke="#000000" strokeWidth={1} fill="url(#gradSpeed)" isAnimationActive={false} strokeDasharray="4 4" />
+                            </AreaChart>
                         </ResponsiveContainer>
                     </div>
                 </Card>
