@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { getSensorStatusText, getAlertMessages, THRESHOLDS } from '@/lib/sensors';
+import type { SensorStates, SystemTelemetry, SensorLog, SensorState } from '@/types/sensors';
 
 interface LiveMonitorProps {
-  sensorStates: any;
-  telemetry?: any;
-  logs?: any[];
+  sensorStates: SensorStates;
+  telemetry?: SystemTelemetry | null;
+  logs?: SensorLog[];
 }
 
 const STREAM_URL = import.meta.env.VITE_STREAM_URL ?? '';
@@ -22,13 +23,13 @@ function formatUptime(seconds?: number) {
 
 // Apple-style status colors
 function getStatusColor(status: string) {
-  if (status === 'safe' || status === 'online') return '#34c759'; // Apple Green
-  if (status === 'warning') return '#ff9500'; // Apple Orange
-  return '#ff3b30'; // Apple Red
+  if (status === 'safe' || status === 'online') return '#34c759';
+  if (status === 'warning') return '#ff9500';
+  return '#ff3b30';
 }
 
-function SensorCard({ sensorKey, states }: { sensorKey: string; states: any }) {
-  const state = states[sensorKey];
+function SensorCard({ sensorKey, states }: { sensorKey: string; states: SensorStates }) {
+  const state = states[sensorKey as keyof SensorStates] as SensorState | undefined;
 
   if (!state) {
     return (
@@ -56,13 +57,16 @@ function SensorCard({ sensorKey, states }: { sensorKey: string; states: any }) {
         />
       </div>
 
-      <div className="flex items-baseline gap-1 justify-center flex-1 py-2">
-        <span className="font-sans text-3xl font-semibold tracking-tight text-al-near-black tabular-nums">
-          {state.value.toFixed(sensorKey === 'ph' ? 2 : 1)}
-        </span>
-        <span className="font-sans text-[13px] font-medium text-al-mid-gray leading-none">
-          {thresh.unit}
-        </span>
+      {/* FIXED: The flex-1 container now perfectly centers the nested baseline group */}
+      <div className="flex items-center justify-center flex-1 py-2">
+        <div className="flex items-baseline gap-1">
+          <span className="font-sans text-3xl font-semibold tracking-tight text-al-near-black tabular-nums">
+            {state.value.toFixed(sensorKey === 'ph' ? 2 : 1)}
+          </span>
+          <span className="font-sans text-[13px] font-medium text-al-mid-gray leading-none">
+            {thresh.unit}
+          </span>
+        </div>
       </div>
 
       <div className="mt-2 pt-3 border-t border-al-light-gray/50">
@@ -76,6 +80,17 @@ function SensorCard({ sensorKey, states }: { sensorKey: string; states: any }) {
 
 export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonitorProps) {
   const [streamStatus, setStreamStatus] = useState<'online' | 'offline'>(STREAM_URL ? 'online' : 'offline');
+  const [retryKey, setRetryKey] = useState(0);
+  const [isCinemaMode, setIsCinemaMode] = useState(false);
+
+  // Allow Escape key to close Cinema Mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isCinemaMode) setIsCinemaMode(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isCinemaMode]);
 
   const alerts = getAlertMessages(sensorStates || {});
   const hasAlert = alerts.length > 0;
@@ -84,9 +99,9 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
 
   return (
     <div className="max-w-[1400px] mx-auto w-full">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
 
-        {/* Redesigned Apple-Style Alert Log */}
+        {/* Alert Log */}
         {hasAlert && (
           <div
             role="alert"
@@ -109,22 +124,50 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
           </div>
         )}
 
-        {/* Video Feed — Apple Style Structure */}
-        <div className="col-span-full lg:col-span-2 lg:row-span-2 bg-white border border-black/5 shadow-sm rounded-[6px] overflow-hidden flex flex-col">
-          <div className="px-4 py-2.5 border-b border-al-light-gray/50 flex items-center justify-between bg-white z-20">
-            <span className="text-[13px] font-medium text-al-near-black tracking-tight">
-              Live View
+        {/* Invisible Placeholder to stop layout collapse when in Cinema Mode */}
+        {isCinemaMode && <div className="hidden lg:block lg:col-span-3 lg:row-span-2" />}
+
+        {/* Video Feed — with Cinema Mode toggle */}
+        <div
+          className={`flex flex-col transition-all duration-300 ${isCinemaMode
+              ? 'fixed inset-0 z-[100] bg-black'
+              : 'col-span-full lg:col-span-3 lg:row-span-2 bg-white border border-black/5 shadow-sm rounded-[6px] overflow-hidden'
+            }`}
+        >
+          <div className={`px-4 py-2.5 flex items-center justify-between z-20 ${isCinemaMode ? 'bg-[#1c1c1e] border-b border-white/10 text-white' : 'border-b border-al-light-gray/50 bg-white text-al-near-black'
+            }`}>
+            <span className="text-[13px] font-medium tracking-tight">
+              {isCinemaMode ? 'Aqua-Life Cinema Mode' : 'Live View'}
             </span>
-            <div className="flex items-center gap-2 px-2.5 py-1 bg-al-light-gray/30 rounded-[4px]">
-              <span className="w-2 h-2 rounded-full shadow-sm" style={{ backgroundColor: getStatusColor(streamStatus) }} />
-              <span className="text-[11px] font-medium text-al-dark-gray uppercase tracking-wider">
-                {streamStatus === 'online' ? 'Linked' : 'Offline'}
-              </span>
+
+            <div className="flex items-center gap-3">
+              <div className={`flex items-center gap-2 px-2.5 py-1 rounded-[4px] ${isCinemaMode ? 'bg-black/50' : 'bg-al-light-gray/30'}`}>
+                <span className="w-2 h-2 rounded-full shadow-sm" style={{ backgroundColor: getStatusColor(streamStatus) }} />
+                <span className={`text-[11px] font-medium uppercase tracking-wider ${isCinemaMode ? 'text-white/70' : 'text-al-dark-gray'}`}>
+                  {streamStatus === 'online' ? 'Linked' : 'Offline'}
+                </span>
+              </div>
+
+              {/* Expand / Shrink Button */}
+              <button
+                onClick={() => setIsCinemaMode(!isCinemaMode)}
+                className={`p-1.5 rounded-[4px] transition-colors ${isCinemaMode ? 'hover:bg-white/10 text-white' : 'hover:bg-al-light-gray/50 text-al-dark-gray'}`}
+                title={isCinemaMode ? "Exit Fullscreen" : "Enter Cinema Mode"}
+              >
+                {isCinemaMode ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
 
-          {/* RESTORED: Dark Mode Monitor Screen Fallback */}
-          <div className="relative aspect-video w-full bg-black">
+          <div className={`relative w-full bg-black ${isCinemaMode ? 'flex-1' : 'aspect-video'}`}>
 
             {/* Fallback UI: Lives BEHIND the video */}
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-0">
@@ -139,14 +182,20 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
               </span>
             </div>
 
-            {/* Live MJPEG Stream */}
+            {/* Live MJPEG Stream with Active Pinging */}
             {STREAM_URL && (
               <img
-                src={STREAM_URL}
+                key={retryKey}
+                src={`${STREAM_URL}?t=${retryKey}`}
                 alt="Live tank feed"
-                className={`absolute inset-0 w-full h-full object-cover z-10 transition-opacity duration-300 ${streamStatus === 'offline' ? 'opacity-0' : 'opacity-100'}`}
+                fetchPriority="high"
+                decoding="async"
+                className={`absolute inset-0 w-full h-full object-contain md:object-cover z-10 transition-opacity duration-300 ${streamStatus === 'offline' ? 'opacity-0' : 'opacity-100'}`}
                 onLoad={() => setStreamStatus('online')}
-                onError={() => setStreamStatus('offline')}
+                onError={() => {
+                  setStreamStatus('offline');
+                  setTimeout(() => setRetryKey(prev => prev + 1), 3000);
+                }}
               />
             )}
           </div>
@@ -154,12 +203,12 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
 
         {/* Dynamic Sensor Cards Grid */}
         {SENSOR_ORDER.map((key) => (
-          <div key={key} className="col-span-1">
+          <div key={key} className={`col-span-1 ${key === 'avg_speed' ? 'lg:col-span-2' : ''}`}>
             <SensorCard sensorKey={key} states={sensorStates} />
           </div>
         ))}
 
-        {/* Behavioral & System Intelligence Dashboard - Apple Style with Dividers */}
+        {/* Behavioral & System Intelligence Dashboard */}
         <div className="col-span-full lg:col-span-3 bg-white border border-black/5 shadow-sm rounded-[6px] p-5 flex flex-col justify-center animate-in fade-in duration-500">
           <div className="flex items-center justify-between mb-4">
             <span className="text-[14px] font-medium text-al-near-black tracking-tight">
@@ -173,7 +222,6 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 divide-y md:divide-y-0 md:divide-x divide-al-light-gray/50">
 
-            {/* Metric 1 */}
             <div className="flex flex-col pl-0 pt-0">
               <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">Population</span>
               <span className="text-[17px] font-semibold text-al-near-black tracking-tight">
@@ -181,7 +229,6 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
               </span>
             </div>
 
-            {/* Metric 2 */}
             <div className="flex flex-col pl-0 md:pl-4 pt-4 md:pt-0">
               <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">Camera Connection</span>
               <span className={`text-[17px] font-semibold tracking-tight ${streamStatus === 'online' ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>
@@ -189,7 +236,6 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
               </span>
             </div>
 
-            {/* Metric 3 */}
             <div className="flex flex-col pl-0 md:pl-4 pt-4 md:pt-0">
               <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">Processor Heat</span>
               <span className="text-[17px] font-semibold text-al-near-black tracking-tight tabular-nums">
@@ -197,7 +243,6 @@ export default function LiveMonitor({ sensorStates, telemetry, logs }: LiveMonit
               </span>
             </div>
 
-            {/* Metric 4 */}
             <div className="flex flex-col pl-0 md:pl-4 pt-4 md:pt-0">
               <span className="text-[12px] text-al-mid-gray tracking-wide mb-1">Operating Time</span>
               <span className="text-[17px] font-semibold text-al-near-black tabular-nums tracking-tight">

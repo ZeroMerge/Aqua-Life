@@ -14,6 +14,7 @@ export interface SensorLog {
   x_pos?: number;
   y_pos?: number;
   timestamp: string;
+  [key: string]: string | number | undefined;
 }
 
 export interface SensorState {
@@ -26,3 +27,10 @@ export interface SensorState {
 }
 
 export type SensorStates = Record<SensorKey, SensorState>;
+
+export interface SystemTelemetry {
+  id: number;
+  core_temp: number;
+  uptime_seconds: number;
+  created_at: string;
+}

@@ -4,9 +4,10 @@ import {
     ResponsiveContainer, ScatterChart, Scatter, ZAxis
 } from 'recharts';
 import { Card } from '@/components/ui/card';
+import type { SensorLog } from '@/types/sensors';
 
 interface InsightsProps {
-    logs: any[];
+    logs: SensorLog[];
 }
 
 export default function Insights({ logs }: InsightsProps) {

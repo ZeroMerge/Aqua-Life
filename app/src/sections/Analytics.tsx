@@ -4,6 +4,8 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import type { SensorLog, SensorStates, SensorKey } from '@/types/sensors';
+import type { TooltipProps } from 'recharts';
+import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import { THRESHOLDS } from '@/lib/sensors';
 import { format } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -61,7 +63,7 @@ export default function Analytics({ logs }: AnalyticsProps) {
     };
   }, [chartData, window]);
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload, label }: TooltipProps<ValueType, NameType>) => {
     if (active && payload && payload.length) {
       return (
         <div className="glass-panel px-4 py-3 rounded-[6px] flex flex-col gap-1">

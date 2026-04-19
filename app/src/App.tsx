@@ -4,6 +4,7 @@ import type { SensorStatus } from '@/types/sensors';
 import { useSensorData } from '@/hooks/useSensorData';
 import { systemStatusLabel } from '@/lib/sensors';
 import { getSupabaseClient } from '@/lib/supabase';
+import type { Session } from '@supabase/supabase-js';
 import LiveMonitor from '@/sections/LiveMonitor';
 import Analytics from '@/sections/Analytics';
 import Thresholds from '@/sections/Thresholds';
@@ -43,7 +44,7 @@ function LockIcon() {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('live');
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
 
   // Destructuring telemetry and logs for use in child sections
   const { sensorStates, logs, systemStatus, telemetry } = useSensorData();
