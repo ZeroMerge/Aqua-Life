@@ -34,7 +34,6 @@ const SENSOR_CONFIG: { key: SensorKey; label: string; decimals: number }[] = [
 export default function Analytics({ logs }: AnalyticsProps) {
   const [window, setWindow] = useState<TimeWindow>('15m');
 
-  // Map string timestamps to numeric milliseconds for Recharts zooming
   const chartData = useMemo(() => {
     return logs.map(log => ({
       ...log,
@@ -42,7 +41,7 @@ export default function Analytics({ logs }: AnalyticsProps) {
     }));
   }, [logs]);
 
-  // Calculate strict domain boundaries for the X-Axis
+  // Ensure strict boundaries so Recharts doesn't calculate min/max internally
   const { filteredData, xDomain } = useMemo(() => {
     if (chartData.length === 0) return { filteredData: [], xDomain: ['auto', 'auto'] };
 
@@ -57,6 +56,7 @@ export default function Analytics({ logs }: AnalyticsProps) {
 
     const filtered = chartData.filter(d => d.timeMs >= minTime);
 
+    // Hardcode the timestamps so Recharts knows EXACTLY where the edges are
     return {
       filteredData: filtered,
       xDomain: [minTime, latestTime]
@@ -90,7 +90,10 @@ export default function Analytics({ logs }: AnalyticsProps) {
         <CardContent>
           <div className="h-[250px] w-full mt-4">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={filteredData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+              <LineChart
+                data={filteredData}
+                margin={{ top: 5, right: 5, left: -20, bottom: 0 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e5ea" />
                 <XAxis
                   dataKey="timeMs"
@@ -105,14 +108,14 @@ export default function Analytics({ logs }: AnalyticsProps) {
                   dy={10}
                 />
                 <YAxis
-                  domain={['dataMin - 1', 'auto']}
+                  domain={['dataMin - 1', 'dataMax + 1']}
                   stroke="#8e8e93"
                   fontSize={12}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(val) => val.toFixed(decimals)}
                 />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip />} isAnimationActive={false} />
                 <ReferenceLine y={thresh.max} stroke="#ff3b30" strokeDasharray="3 3" opacity={0.5} />
                 <ReferenceLine y={thresh.min} stroke="#ff3b30" strokeDasharray="3 3" opacity={0.5} />
                 <Line
@@ -121,7 +124,7 @@ export default function Analytics({ logs }: AnalyticsProps) {
                   stroke="#007aff"
                   strokeWidth={3}
                   dot={false}
-                  isAnimationActive={false} // Prevents jarring redraws on live updates
+                  isAnimationActive={false}
                   activeDot={{ r: 6, fill: "#007aff", stroke: "#ffffff", strokeWidth: 3 }}
                 />
               </LineChart>
