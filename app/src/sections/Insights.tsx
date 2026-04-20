@@ -297,7 +297,7 @@ export default function Insights({ logs }: InsightsProps) {
         <div className="flex flex-col gap-8 animate-in fade-in duration-700">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div className="flex flex-col gap-2">
-                    <h2 className="text-[28px] font-semibold tracking-tight text-al-near-black">Life Trends</h2>
+                    <h2 className="text-[28px] font-semibold tracking-tight text-al-near-black">Ecosystem Trends</h2>
                     <p className="text-[15px] text-al-mid-gray max-w-2xl">
                         Organic behavior mapping and multi-sensor ecosystem diagnostics.
                     </p>
