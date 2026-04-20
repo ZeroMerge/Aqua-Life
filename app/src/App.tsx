@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { SensorStatus } from '@/types/sensors';
-import { useSensorData } from '@/hooks/useSensorData';
+import { useSensorData, type GlobalTimeWindow } from '@/hooks/useSensorData';
 import { systemStatusLabel } from '@/lib/sensors';
 import { getSupabaseClient } from '@/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
@@ -11,10 +11,8 @@ import Thresholds from '@/sections/Thresholds';
 import Insights from '@/sections/Insights';
 import Login from '@/components/Login';
 
-// Added 'insights' to the TabId type
 type TabId = 'live' | 'analytics' | 'insights' | 'thresholds';
 
-// Included the Insights tab in the navigation array
 const TABS: { id: TabId; label: string }[] = [
   { id: 'live', label: 'Live Monitor' },
   { id: 'analytics', label: 'Analytics' },
@@ -46,8 +44,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('live');
   const [session, setSession] = useState<Session | null>(null);
 
-  // Destructuring telemetry and logs for use in child sections
-  const { sensorStates, logs, systemStatus, telemetry } = useSensorData();
+  // NEW: Global Time Window State (Default to 1 Hour)
+  const [globalTimeWindow, setGlobalTimeWindow] = useState<GlobalTimeWindow>('1h');
+
+  // Destructuring telemetry and logs, now passing the active window to trigger smart fetches
+  const { sensorStates, logs, systemStatus, telemetry } = useSensorData(globalTimeWindow);
 
   useEffect(() => {
     const supabase = getSupabaseClient();
@@ -132,9 +133,26 @@ export default function App() {
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
           >
             {activeTab === 'live' && <LiveMonitor sensorStates={sensorStates} telemetry={telemetry} logs={logs} />}
-            {activeTab === 'analytics' && <Analytics logs={logs} sensorStates={sensorStates} />}
-            {/* Added rendering for the new Insights section */}
-            {activeTab === 'insights' && <Insights logs={logs} />}
+
+            {/* NEW: Passing down globalTimeWindow and setGlobalTimeWindow */}
+            {activeTab === 'analytics' && (
+              <Analytics
+                logs={logs}
+                sensorStates={sensorStates}
+                timeWindow={globalTimeWindow}
+                setTimeWindow={setGlobalTimeWindow}
+              />
+            )}
+
+            {/* NEW: Passing down globalTimeWindow and setGlobalTimeWindow */}
+            {activeTab === 'insights' && (
+              <Insights
+                logs={logs}
+                timeWindow={globalTimeWindow}
+                setTimeWindow={setGlobalTimeWindow}
+              />
+            )}
+
             {activeTab === 'thresholds' && (session ? <Thresholds sensorStates={sensorStates} /> : <Login />)}
           </motion.div>
         </AnimatePresence>

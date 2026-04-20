@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
@@ -10,9 +10,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
+// 1. Updated Props to accept global time state
+export type TimeWindow = '1h' | '3h' | '24h' | 'all';
+
 interface AnalyticsProps {
   logs: SensorLog[];
   sensorStates: SensorStates;
+  timeWindow: TimeWindow;
+  setTimeWindow: (window: TimeWindow) => void;
 }
 
 interface ChartDataPoint extends SensorLog {
@@ -22,16 +27,14 @@ interface ChartDataPoint extends SensorLog {
   isForecast?: boolean;
 }
 
-type TimeWindow = '15m' | '1h' | '6h' | 'all';
-
+// 2. Updated buttons to match the new smart-fetch intervals
 const TIME_WINDOWS: { id: TimeWindow; label: string; ms: number }[] = [
-  { id: '15m', label: '15 Min', ms: 15 * 60 * 1000 },
   { id: '1h', label: '1 Hour', ms: 60 * 60 * 1000 },
-  { id: '6h', label: '6 Hours', ms: 6 * 60 * 60 * 1000 },
+  { id: '3h', label: '3 Hours', ms: 3 * 60 * 60 * 1000 },
+  { id: '24h', label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
   { id: 'all', label: 'All Time', ms: Infinity },
 ];
 
-// Re-integrated contextual colors for clear Trendline visibility
 const SENSOR_CONFIG: { key: SensorKey; label: string; decimals: number; color: string }[] = [
   { key: 'ph', label: 'Water pH', decimals: 2, color: '#00c7be' },
   { key: 'temperature', label: 'Water Temperature', decimals: 1, color: '#ff9500' },
@@ -39,49 +42,13 @@ const SENSOR_CONFIG: { key: SensorKey; label: string; decimals: number; color: s
   { key: 'dissolved_oxygen', label: 'Oxygen Level', decimals: 1, color: '#32ade6' },
 ];
 
-export default function Analytics({ logs }: AnalyticsProps) {
-  const [window, setWindow] = useState<TimeWindow>('15m');
-
-  const chartData = useMemo(() => {
-    return logs.map(log => ({
-      ...log,
-      timeMs: new Date(log.timestamp).getTime()
-    }));
-  }, [logs]);
-
-  // Extended X-Axis to create empty space on the right for the Forecast
-  const { filteredData, xDomain } = useMemo(() => {
-    if (chartData.length === 0) return { filteredData: [], xDomain: ['auto', 'auto'] };
-
-    const latestTime = chartData[chartData.length - 1].timeMs;
-
-    if (window === 'all') {
-      const minTime = chartData[0].timeMs;
-      const span = latestTime - minTime;
-      return { filteredData: chartData, xDomain: [minTime, latestTime + (span * 0.1)] };
-    }
-
-    const windowMs = TIME_WINDOWS.find(w => w.id === window)?.ms ?? Infinity;
-    const minTime = latestTime - windowMs;
-    // Add 15% extra time to the right side of the chart to project the future
-    const futureTime = latestTime + (windowMs * 0.15);
-
-    const filtered = chartData.filter(d => d.timeMs >= minTime);
-
-    return {
-      filteredData: filtered,
-      xDomain: [minTime, futureTime]
-    };
-  }, [chartData, window]);
-
-// Custom Tooltip that ignores the 'sma' lines and only reads actual data
 const CustomTooltip = ({ active, payload, label, decimals, color }: TooltipProps<ValueType, NameType> & { decimals: number; color: string }) => {
   if (active && payload && payload.length) {
     const activeData = payload.find((p) => p.dataKey !== 'sma' && p.dataKey !== 'sma_forecast') || payload[0];
-    if (activeData.value == null) return null; // Don't show tooltip in the future empty space
+    if (activeData.value == null) return null;
 
     return (
-      <div className="bg-white/95 backdrop-blur-md px-4 py-3 rounded-[6px] flex flex-col gap-1 shadow-xl border border-black/5">
+      <div className="bg-white/95 backdrop-blur-md px-4 py-3 rounded-[6px] flex flex-col gap-1 shadow-xl border border-black/5 z-50">
         <span className="text-[12px] font-bold text-al-mid-gray uppercase tracking-wider mb-1">
           {label ? format(new Date(label), 'HH:mm:ss') : ''}
         </span>
@@ -109,9 +76,8 @@ interface SensorChartProps {
 function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain }: SensorChartProps) {
   const thresh = THRESHOLDS[sensorKey];
 
-  // The Diagnostic Brain: Calculate Simple Moving Average and Forward Projection
   const chartDataWithTrend = useMemo(() => {
-    const SMA_PERIODS = 5; // 5-tick rolling average to filter noise
+    const SMA_PERIODS = 5;
 
     const processed: ChartDataPoint[] = filteredData.map((d, index, arr) => {
       let sma = undefined;
@@ -130,21 +96,18 @@ function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain 
       return { ...d, sma };
     });
 
-    // Calculate Future Projection slope
     const validSmas = processed.filter(p => p.sma !== undefined);
     if (validSmas.length > 5 && xDomain[1] !== 'auto') {
-      const p2 = validSmas[validSmas.length - 1]; // Latest smoothed point
-      const p1 = validSmas[validSmas.length - 5]; // Point 5 ticks ago to find trajectory
+      const p2 = validSmas[validSmas.length - 1];
+      const p1 = validSmas[validSmas.length - 5];
 
       if (p2.timeMs > p1.timeMs) {
         const slope = (p2.sma! - p1.sma!) / (p2.timeMs - p1.timeMs);
         const futureTime = xDomain[1] as number;
         const futurePrediction = p2.sma! + (slope * (futureTime - p2.timeMs));
 
-        // Attach the forecast start point to the latest SMA point so the line connects cleanly
         p2.sma_forecast = p2.sma;
 
-        // Push the empty future state to force the line to render forward
         processed.push({
           id: -1,
           timestamp: new Date(futureTime).toISOString(),
@@ -163,11 +126,28 @@ function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain 
   return (
     <Card className="w-full relative overflow-hidden">
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start sm:items-center justify-between flex-col sm:flex-row gap-4 sm:gap-0">
           <CardTitle className="text-[13px] text-al-dark-gray font-bold uppercase tracking-widest">{label}</CardTitle>
-          <span className="text-[10px] font-bold text-al-mid-gray bg-al-light-gray/50 px-2 py-0.5 rounded-[4px]">
-            + FORECAST
-          </span>
+
+          <div className="flex items-center gap-3 bg-al-light-gray/20 px-3 py-1.5 rounded-[6px] border border-black/5">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-0.5 opacity-30" style={{ backgroundColor: color }}></span>
+              <span className="text-[9px] font-bold text-al-mid-gray uppercase tracking-wider">Raw</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-1" style={{ backgroundColor: color }}></span>
+              <span className="text-[9px] font-bold text-al-mid-gray uppercase tracking-wider">Trend</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <svg width="22" height="6" className="overflow-visible">
+                {/* Thinner, faded legend dashed line */}
+                <line x1="0" y1="3" x2="14" y2="3" stroke={color} strokeWidth="1.2" strokeOpacity="0.4" strokeDasharray="3 3" className="animate-flow-dash" />
+                {/* Smaller, faded, pulsing legend arrow */}
+                <polygon points="14,1.5 18,3 14,4.5" fill={color} className="animate-forecast-blink" />
+              </svg>
+              <span className="text-[9px] font-bold text-[#007aff] uppercase tracking-wider">Forecast</span>
+            </div>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -175,8 +155,14 @@ function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain 
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={chartDataWithTrend}
-              margin={{ top: 5, right: 5, left: -20, bottom: 0 }}
+              margin={{ top: 5, right: 15, left: -20, bottom: 0 }}
             >
+              <defs>
+                {/* Scaled down SVG Arrowhead definition with soft pulse keyframe */}
+                <marker id={`arrow-${sensorKey}`} viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.5" markerHeight="3.5" orient="auto-start-reverse" markerUnits="strokeWidth">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill={color} className="animate-forecast-blink" />
+                </marker>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
               <XAxis
                 dataKey="timeMs"
@@ -204,7 +190,6 @@ function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain 
               <ReferenceLine y={thresh.max} stroke="#ff3b30" strokeDasharray="3 3" strokeWidth={1.5} opacity={0.4} />
               <ReferenceLine y={thresh.min} stroke="#ff3b30" strokeDasharray="3 3" strokeWidth={1.5} opacity={0.4} />
 
-              {/* 1. Raw Data (Noisy & Faded in Background) */}
               <Line
                 type="monotone"
                 dataKey={sensorKey}
@@ -213,30 +198,34 @@ function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain 
                 strokeOpacity={0.25}
                 dot={false}
                 isAnimationActive={false}
+                connectNulls={true}
               />
 
-              {/* 2. Simple Moving Average (Smooth & Bold) */}
               <Line
                 type="monotone"
                 dataKey="sma"
                 stroke={color}
-                strokeWidth={3.5}
+                strokeWidth={3}
                 dot={false}
                 isAnimationActive={false}
+                connectNulls={true}
                 activeDot={{ r: 5, fill: color, stroke: "#ffffff", strokeWidth: 2 }}
               />
 
-              {/* 3. Future Trendline Projection (Dashed into empty space) */}
+              {/* Forecast: Thinner (1.2), Faded (0.4), Flowing Dashes + Soft Blinking Arrow */}
               <Line
                 type="monotone"
                 dataKey="sma_forecast"
                 stroke={color}
-                strokeWidth={3.5}
-                strokeDasharray="6 6"
-                strokeOpacity={0.7}
+                strokeWidth={1.2}
+                strokeDasharray="4 4"
+                strokeOpacity={0.4}
                 dot={false}
                 isAnimationActive={false}
                 activeDot={false}
+                connectNulls={true}
+                className="animate-flow-dash"
+                style={{ markerEnd: `url(#arrow-${sensorKey})` }}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -246,16 +235,68 @@ function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain 
   );
 }
 
+export default function Analytics({ logs, timeWindow, setTimeWindow }: AnalyticsProps) {
+  const chartData = useMemo(() => {
+    return logs.map(log => ({
+      ...log,
+      timeMs: new Date(log.timestamp).getTime()
+    }));
+  }, [logs]);
+
+  const { filteredData, xDomain } = useMemo(() => {
+    if (chartData.length === 0) return { filteredData: [], xDomain: ['auto', 'auto'] };
+
+    const latestTime = chartData[chartData.length - 1].timeMs;
+
+    if (timeWindow === 'all') {
+      const minTime = chartData[0].timeMs;
+      const span = latestTime - minTime;
+      return { filteredData: chartData, xDomain: [minTime, latestTime + (span * 0.1)] };
+    }
+
+    const windowMs = TIME_WINDOWS.find(w => w.id === timeWindow)?.ms ?? Infinity;
+    const minTime = latestTime - windowMs;
+    const futureTime = latestTime + (windowMs * 0.15);
+
+    const filtered = chartData.filter(d => d.timeMs >= minTime);
+
+    return {
+      filteredData: filtered,
+      xDomain: [minTime, futureTime]
+    };
+  }, [chartData, timeWindow]);
+
   return (
     <div className="w-full flex flex-col gap-6 animate-in fade-in duration-500">
+
+      {/* GLOBAL KEYFRAMES FOR THE PREDICTIVE UI */}
+      <style>{`
+        /* Slower, calmer marching ants effect for the dashed line */
+        @keyframes dash-flow-animation {
+          from { stroke-dashoffset: 8; }
+          to { stroke-dashoffset: 0; }
+        }
+        .animate-flow-dash {
+          animation: dash-flow-animation 2s linear infinite;
+        }
+
+        /* Soft, breathing pulse for the arrowhead (faded) */
+        @keyframes forecast-blink-animation {
+          0%, 100% { opacity: 0.15; }
+          50% { opacity: 0.6; }
+        }
+        .animate-forecast-blink {
+          animation: forecast-blink-animation 2s ease-in-out infinite;
+        }
+      `}</style>
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
         <div className="flex p-1 bg-al-light-gray/50 rounded-[6px] w-fit border border-black/5">
           {TIME_WINDOWS.map((tw) => (
             <button
               key={tw.id}
-              onClick={() => setWindow(tw.id)}
-              className={`px-4 py-1.5 text-[13px] font-medium rounded-[6px] transition-all duration-300 ${window === tw.id
+              onClick={() => setTimeWindow(tw.id)}
+              className={`px-4 py-1.5 text-[13px] font-medium rounded-[6px] transition-all duration-300 ${timeWindow === tw.id
                 ? 'bg-white text-al-near-black shadow-sm'
                 : 'text-al-mid-gray hover:text-al-near-black'
                 }`}

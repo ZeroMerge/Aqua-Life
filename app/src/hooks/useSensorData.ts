@@ -4,7 +4,15 @@ import { getSensorStatus, getSystemStatus, THRESHOLDS } from '@/lib/sensors';
 import type { SensorLog, SensorStates, SystemTelemetry, SensorStatus, SensorKey } from '@/types/sensors';
 
 const ROLLING_WINDOW = 5;
-const INSIGHTS_LOGS = 1000; // Larger window for trend analysis
+
+// Define the exact milliseconds for our new time windows
+const TIME_WINDOWS = {
+  '1h': 60 * 60 * 1000,
+  '3h': 3 * 60 * 60 * 1000,
+  '24h': 24 * 60 * 60 * 1000,
+};
+
+export type GlobalTimeWindow = keyof typeof TIME_WINDOWS | 'all';
 
 function getLatestNonNull(logs: SensorLog[], key: string): number {
   for (let i = logs.length - 1; i >= 0; i--) {
@@ -46,7 +54,8 @@ function buildStates(
   return states as SensorStates;
 }
 
-export function useSensorData() {
+// We now pass the active time window into the hook
+export function useSensorData(activeWindow: GlobalTimeWindow = '1h') {
   const [logs, setLogs] = useState<SensorLog[]>([]);
   const [telemetry, setTelemetry] = useState<SystemTelemetry | null>(null);
   const [sensorStates, setSensorStates] = useState<SensorStates>({} as SensorStates);
@@ -80,28 +89,51 @@ export function useSensorData() {
         if (data && data.length > 0) setTelemetry(data[0]);
       });
 
-    // 3. Fetch Sensor Logs (Increased limit for Insights)
-    supabase.from('sensor_logs').select('*').order('timestamp', { ascending: false }).limit(INSIGHTS_LOGS)
-      .then(({ data }) => {
-        if (data && data.length > 0) {
-          const sorted = [...data].reverse();
-          setLogs(sorted);
-          const states = buildStates(sorted, THRESHOLDS);
-          setSensorStates(states);
-          setSystemStatus(getSystemStatus(states));
-        }
-      });
+    // 3. Smart Contextual Data Fetch (Fires every time the window changes)
+    let query = supabase.from('sensor_logs').select('*').order('timestamp', { ascending: true });
+
+    if (activeWindow !== 'all') {
+      const windowMs = TIME_WINDOWS[activeWindow];
+      const cutoffDate = new Date(Date.now() - windowMs).toISOString();
+      query = query.gte('timestamp', cutoffDate);
+    } else {
+      // If "All Time", limit to 5000 to prevent browser crash
+      query = query.limit(5000);
+    }
+
+    query.then(({ data }) => {
+      if (data && data.length > 0) {
+        setLogs(data);
+        const states = buildStates(data, THRESHOLDS);
+        setSensorStates(states);
+        setSystemStatus(getSystemStatus(states));
+      } else {
+        // Clear out if window is empty
+        setLogs([]);
+      }
+    });
 
     // 4. Real-time Subscriptions
     const sensorSub = supabase
       .channel('sensor_stream')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sensor_logs' }, (payload) => {
         setLogs((prev) => {
-          const next = [...prev, payload.new as SensorLog].slice(-INSIGHTS_LOGS);
-          const states = buildStates(next, THRESHOLDS);
+          // Enforce active window limit on live incoming data
+          const next = [...prev, payload.new as SensorLog];
+          let filteredNext = next;
+
+          if (activeWindow !== 'all') {
+            const cutoffTimeMs = Date.now() - TIME_WINDOWS[activeWindow];
+            filteredNext = next.filter(l => new Date(l.timestamp).getTime() >= cutoffTimeMs);
+          } else {
+            // Keep a safety cap of 5000 logs even in "All Time" mode
+            filteredNext = next.slice(-3000);
+          }
+
+          const states = buildStates(filteredNext, THRESHOLDS);
           setSensorStates(states);
           setSystemStatus(getSystemStatus(states));
-          return next;
+          return filteredNext;
         });
       })
       .subscribe();
@@ -117,7 +149,8 @@ export function useSensorData() {
       supabase.removeChannel(sensorSub);
       supabase.removeChannel(telemetrySub);
     };
-  }, []);
+    // Hook re-runs fetch exactly when activeWindow changes
+  }, [activeWindow]);
 
   return { logs, sensorStates, systemStatus, telemetry };
 }

@@ -7,16 +7,20 @@ import { Card } from '@/components/ui/card';
 import type { SensorLog } from '@/types/sensors';
 import { format } from 'date-fns';
 
+// 1. Updated Props to accept global time state from App.tsx
+export type TimeWindow = '1h' | '3h' | '24h' | 'all';
+
 interface InsightsProps {
     logs: SensorLog[];
+    timeWindow: TimeWindow;
+    setTimeWindow: (window: TimeWindow) => void;
 }
 
-type TimeWindow = '1h' | '24h' | '7d' | 'all';
-
+// 2. Updated buttons to match the new smart-fetch intervals
 const TIME_WINDOWS: { id: TimeWindow; label: string; ms: number }[] = [
-    { id: '1h', label: 'Last 1 Hour', ms: 60 * 60 * 1000 },
-    { id: '24h', label: 'Last 24 Hours', ms: 24 * 60 * 60 * 1000 },
-    { id: '7d', label: 'Last 7 Days', ms: 7 * 24 * 60 * 60 * 1000 },
+    { id: '1h', label: '1 Hour', ms: 60 * 60 * 1000 },
+    { id: '3h', label: '3 Hours', ms: 3 * 60 * 60 * 1000 },
+    { id: '24h', label: '24 Hours', ms: 24 * 60 * 60 * 1000 },
     { id: 'all', label: 'All Time', ms: Infinity },
 ];
 
@@ -82,7 +86,7 @@ const EcosystemDiagnosticTooltip = ({ active, payload, speedThreshold }: any) =>
     }
 
     return (
-        <div className="bg-white/95 backdrop-blur-md p-4 rounded-[8px] shadow-xl border border-black/5 min-w-[250px]">
+        <div className="bg-white/95 backdrop-blur-md p-4 rounded-[8px] shadow-xl border border-black/5 min-w-[250px] z-50">
             <p className="text-[12px] font-bold text-al-mid-gray mb-3 border-b border-black/5 pb-2 uppercase tracking-wider">
                 {format(new Date(data.time), 'MMM d, HH:mm:ss')}
             </p>
@@ -91,29 +95,38 @@ const EcosystemDiagnosticTooltip = ({ active, payload, speedThreshold }: any) =>
                 <div className="flex flex-col">
                     <span className="text-[11px] text-al-mid-gray">Temperature</span>
                     <div className="flex items-baseline gap-1">
-                        <span className="text-[14px] font-semibold text-[#ff9500]">{data.temp_continuous?.toFixed(1) ?? '--'}°C</span>
-                        {data.temp_is_stale && <span className="text-[9px] text-al-mid-gray/70 uppercase font-bold tracking-wider">Stale</span>}
+                        {/* Dimming the bright colors with opacity-40 if the reading is stale */}
+                        <span className={`text-[14px] font-semibold text-[#ff9500] ${data.temp_is_stale ? 'opacity-40' : ''}`}>
+                            {data.temp_continuous?.toFixed(1) ?? '--'}°C
+                        </span>
+                        {data.temp_is_stale && <span className="text-[8px] text-al-mid-gray/50 uppercase font-bold tracking-wider">Stale</span>}
                     </div>
                 </div>
                 <div className="flex flex-col">
                     <span className="text-[11px] text-al-mid-gray">Oxygen</span>
                     <div className="flex items-baseline gap-1">
-                        <span className="text-[14px] font-semibold text-[#32ade6]">{data.do_continuous?.toFixed(1) ?? '--'} mg/L</span>
-                        {data.do_is_stale && <span className="text-[9px] text-al-mid-gray/70 uppercase font-bold tracking-wider">Stale</span>}
+                        <span className={`text-[14px] font-semibold text-[#32ade6] ${data.do_is_stale ? 'opacity-40' : ''}`}>
+                            {data.do_continuous?.toFixed(1) ?? '--'} mg/L
+                        </span>
+                        {data.do_is_stale && <span className="text-[8px] text-al-mid-gray/50 uppercase font-bold tracking-wider">Stale</span>}
                     </div>
                 </div>
                 <div className="flex flex-col">
                     <span className="text-[11px] text-al-mid-gray">Water pH</span>
                     <div className="flex items-baseline gap-1">
-                        <span className="text-[14px] font-semibold text-[#af52de]">{data.ph_continuous?.toFixed(2) ?? '--'}</span>
-                        {data.ph_is_stale && <span className="text-[9px] text-al-mid-gray/70 uppercase font-bold tracking-wider">Stale</span>}
+                        <span className={`text-[14px] font-semibold text-[#af52de] ${data.ph_is_stale ? 'opacity-40' : ''}`}>
+                            {data.ph_continuous?.toFixed(2) ?? '--'}
+                        </span>
+                        {data.ph_is_stale && <span className="text-[8px] text-al-mid-gray/50 uppercase font-bold tracking-wider">Stale</span>}
                     </div>
                 </div>
                 <div className="flex flex-col">
                     <span className="text-[11px] text-al-mid-gray">Fish Speed</span>
                     <div className="flex items-baseline gap-1">
-                        <span className="text-[14px] font-semibold text-al-near-black">{data.speed_continuous?.toFixed(1) ?? '--'} px/s</span>
-                        {data.speed_is_stale && <span className="text-[9px] text-al-mid-gray/70 uppercase font-bold tracking-wider">Stale</span>}
+                        <span className={`text-[14px] font-semibold text-al-near-black ${data.speed_is_stale ? 'opacity-40' : ''}`}>
+                            {data.speed_continuous?.toFixed(1) ?? '--'} px/s
+                        </span>
+                        {data.speed_is_stale && <span className="text-[8px] text-al-mid-gray/50 uppercase font-bold tracking-wider">Stale</span>}
                     </div>
                 </div>
             </div>
@@ -126,8 +139,8 @@ const EcosystemDiagnosticTooltip = ({ active, payload, speedThreshold }: any) =>
     );
 };
 
-export default function Insights({ logs }: InsightsProps) {
-    const [timeWindow, setTimeWindow] = useState<TimeWindow>('1h');
+// 3. Main component now utilizes the global props
+export default function Insights({ logs, timeWindow, setTimeWindow }: InsightsProps) {
     const [speedThreshold, setSpeedThreshold] = useState<number>(50);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -151,8 +164,6 @@ export default function Insights({ logs }: InsightsProps) {
 
         const cutoffTime = timeWindow === 'all' ? 0 : ticker - (TIME_WINDOWS.find(w => w.id === timeWindow)?.ms ?? Infinity);
 
-        // Find the absolute last known value BEFORE our time window started
-        // This ensures if a sensor died 2 hours ago, a 1-hour window still knows its last known state
         let lastTemp: number | undefined = undefined;
         let lastPh: number | undefined = undefined;
         let lastDo: number | undefined = undefined;
@@ -217,21 +228,19 @@ export default function Insights({ logs }: InsightsProps) {
                 do_solid: b.do,
                 do_is_stale: b.do == null,
 
-                speed_continuous: lastSpeed !== undefined ? lastSpeed : 0, // Fallback to 0 if camera breaks completely
+                speed_continuous: lastSpeed !== undefined ? lastSpeed : 0,
                 speed_solid: b.speed,
                 speed_is_stale: b.speed == null,
             };
         });
     }, [sortedRawLogs, timeWindow, ticker]);
 
-    // X-Axis bounds dynamically driven by the Javascript Clock
     const xDomain = useMemo(() => {
         if (timeWindow === 'all') return ['dataMin', 'dataMax'];
         const windowMs = TIME_WINDOWS.find(w => w.id === timeWindow)?.ms ?? Infinity;
         return [ticker - windowMs, ticker];
     }, [timeWindow, ticker]);
 
-    // Heatmap filtering (stays isolated to valid points only)
     const heatmapPoints = useMemo(() => {
         const cutoffTime = timeWindow === 'all' ? 0 : ticker - (TIME_WINDOWS.find(w => w.id === timeWindow)?.ms ?? Infinity);
         return sortedRawLogs
