@@ -36,8 +36,9 @@ export default function Thresholds({ sensorStates }: ThresholdsProps) {
 
     try {
       for (const key of SENSOR_KEYS) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase.from('sensor_configs') as any)
+        await supabase
+          .from('sensor_configs')
+          // @ts-expect-error - ignore table type mismatch for dynamically updated thresholds
           .update({
             min_val: form[key].min,
             max_val: form[key].max,

@@ -10,7 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
-// 1. Updated Props to accept global time state
 export type TimeWindow = '1h' | '3h' | '24h' | 'all';
 
 interface AnalyticsProps {
@@ -27,7 +26,6 @@ interface ChartDataPoint extends SensorLog {
   isForecast?: boolean;
 }
 
-// 2. Updated buttons to match the new smart-fetch intervals
 const TIME_WINDOWS: { id: TimeWindow; label: string; ms: number }[] = [
   { id: '1h', label: '1 Hour', ms: 60 * 60 * 1000 },
   { id: '3h', label: '3 Hours', ms: 3 * 60 * 60 * 1000 },
@@ -76,7 +74,7 @@ interface SensorChartProps {
 function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain }: SensorChartProps) {
   const thresh = THRESHOLDS[sensorKey];
 
-  const chartDataWithTrend = useMemo(() => {
+  const { chartDataWithTrend, isPredicting } = useMemo(() => {
     const SMA_PERIODS = 5;
 
     const processed: ChartDataPoint[] = filteredData.map((d, index, arr) => {
@@ -97,31 +95,57 @@ function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain 
     });
 
     const validSmas = processed.filter(p => p.sma !== undefined);
-    if (validSmas.length > 5 && xDomain[1] !== 'auto') {
-      const p2 = validSmas[validSmas.length - 1];
-      const p1 = validSmas[validSmas.length - 5];
+    let isPredicting = false;
 
-      if (p2.timeMs > p1.timeMs) {
-        const slope = (p2.sma! - p1.sma!) / (p2.timeMs - p1.timeMs);
-        const futureTime = xDomain[1] as number;
-        const futurePrediction = p2.sma! + (slope * (futureTime - p2.timeMs));
+    // CONFIDENCE GATE: Require at least 30 valid smoothed data points to draw a forecast
+    if (validSmas.length >= 30 && xDomain[1] !== 'auto') {
+      isPredicting = true;
 
-        p2.sma_forecast = p2.sma;
+      // LINEAR REGRESSION: Look at up to the last 50 points to find the line of best fit
+      const regressionPoints = validSmas.slice(-50);
+      const N = regressionPoints.length;
 
-        processed.push({
-          id: -1,
-          timestamp: new Date(futureTime).toISOString(),
-          timeMs: futureTime,
-          [sensorKey]: undefined,
-          sma: undefined,
-          sma_forecast: futurePrediction,
-          isForecast: true
-        } as ChartDataPoint);
+      // Normalize X values to prevent JS math overflows with massive Unix timestamps
+      const xOffset = regressionPoints[0].timeMs;
+
+      let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+      for (let i = 0; i < N; i++) {
+        const x = regressionPoints[i].timeMs - xOffset;
+        const y = regressionPoints[i].sma!;
+        sumX += x;
+        sumY += y;
+        sumXY += x * y;
+        sumXX += x * x;
       }
-    }
-    return processed;
-  }, [filteredData, sensorKey, xDomain]);
 
+      const denominator = (N * sumXX) - (sumX * sumX);
+      let slope = 0;
+      if (denominator !== 0) {
+        slope = ((N * sumXY) - (sumX * sumY)) / denominator;
+      }
+
+      const intercept = (sumY - slope * sumX) / N;
+
+      const lastPoint = validSmas[validSmas.length - 1];
+      const futureTime = xDomain[1] as number;
+      const futureNormalized = futureTime - xOffset;
+      const futurePrediction = (slope * futureNormalized) + intercept;
+
+      // Anchor the forecast line seamlessly to the final historical SMA point
+      lastPoint.sma_forecast = lastPoint.sma;
+
+      processed.push({
+        id: -1,
+        timestamp: new Date(futureTime).toISOString(),
+        timeMs: futureTime,
+        [sensorKey]: undefined,
+        sma: undefined,
+        sma_forecast: futurePrediction,
+        isForecast: true
+      } as ChartDataPoint);
+    }
+    return { chartDataWithTrend: processed, isPredicting };
+  }, [filteredData, sensorKey, xDomain]);
 
   return (
     <Card className="w-full relative overflow-hidden">
@@ -140,12 +164,19 @@ function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain 
             </div>
             <div className="flex items-center gap-1.5">
               <svg width="22" height="6" className="overflow-visible">
-                {/* Thinner, faded legend dashed line */}
-                <line x1="0" y1="3" x2="14" y2="3" stroke={color} strokeWidth="1.2" strokeOpacity="0.4" strokeDasharray="3 3" className="animate-flow-dash" />
-                {/* Smaller, faded, pulsing legend arrow */}
-                <polygon points="14,1.5 18,3 14,4.5" fill={color} className="animate-forecast-blink" />
+                <line
+                  x1="0" y1="3" x2="14" y2="3"
+                  stroke={color}
+                  strokeWidth="1.2"
+                  strokeOpacity={isPredicting ? "0.4" : "0.1"}
+                  strokeDasharray="3 3"
+                  className={isPredicting ? "animate-flow-dash" : ""}
+                />
+                {isPredicting && <polygon points="14,1.5 18,3 14,4.5" fill={color} className="animate-forecast-blink" />}
               </svg>
-              <span className="text-[9px] font-bold text-[#007aff] uppercase tracking-wider">Forecast</span>
+              <span className={`text-[9px] font-bold uppercase tracking-wider transition-colors duration-300 ${isPredicting ? 'text-[#007aff]' : 'text-al-mid-gray/50'}`}>
+                {isPredicting ? 'Forecast' : 'Forecast (Gathering Data...)'}
+              </span>
             </div>
           </div>
         </div>
@@ -158,7 +189,6 @@ function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain 
               margin={{ top: 5, right: 15, left: -20, bottom: 0 }}
             >
               <defs>
-                {/* Scaled down SVG Arrowhead definition with soft pulse keyframe */}
                 <marker id={`arrow-${sensorKey}`} viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.5" markerHeight="3.5" orient="auto-start-reverse" markerUnits="strokeWidth">
                   <path d="M 0 0 L 10 5 L 0 10 z" fill={color} className="animate-forecast-blink" />
                 </marker>
@@ -212,21 +242,22 @@ function SensorChart({ sensorKey, label, decimals, color, filteredData, xDomain 
                 activeDot={{ r: 5, fill: color, stroke: "#ffffff", strokeWidth: 2 }}
               />
 
-              {/* Forecast: Thinner (1.2), Faded (0.4), Flowing Dashes + Soft Blinking Arrow */}
-              <Line
-                type="monotone"
-                dataKey="sma_forecast"
-                stroke={color}
-                strokeWidth={1.2}
-                strokeDasharray="4 4"
-                strokeOpacity={0.4}
-                dot={false}
-                isAnimationActive={false}
-                activeDot={false}
-                connectNulls={true}
-                className="animate-flow-dash"
-                style={{ markerEnd: `url(#arrow-${sensorKey})` }}
-              />
+              {isPredicting && (
+                <Line
+                  type="monotone"
+                  dataKey="sma_forecast"
+                  stroke={color}
+                  strokeWidth={1.2}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.4}
+                  dot={false}
+                  isAnimationActive={false}
+                  activeDot={false}
+                  connectNulls={true}
+                  className="animate-flow-dash"
+                  style={{ markerEnd: `url(#arrow-${sensorKey})` }}
+                />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -271,7 +302,6 @@ export default function Analytics({ logs, timeWindow, setTimeWindow }: Analytics
 
       {/* GLOBAL KEYFRAMES FOR THE PREDICTIVE UI */}
       <style>{`
-        /* Slower, calmer marching ants effect for the dashed line */
         @keyframes dash-flow-animation {
           from { stroke-dashoffset: 8; }
           to { stroke-dashoffset: 0; }
@@ -280,7 +310,6 @@ export default function Analytics({ logs, timeWindow, setTimeWindow }: Analytics
           animation: dash-flow-animation 2s linear infinite;
         }
 
-        /* Soft, breathing pulse for the arrowhead (faded) */
         @keyframes forecast-blink-animation {
           0%, 100% { opacity: 0.15; }
           50% { opacity: 0.6; }

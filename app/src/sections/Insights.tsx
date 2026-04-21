@@ -47,8 +47,23 @@ function getHeatmapPalette() {
 // ---------------------------------------------------------
 // COMPONENT: Ecosystem Tooltip (Diagnostic Brain)
 // ---------------------------------------------------------
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const EcosystemDiagnosticTooltip = ({ active, payload, speedThreshold }: any) => {
+interface SynchronizedPoint {
+    time: number;
+    temp_continuous: number | undefined;
+    temp_solid: number | null;
+    temp_is_stale: boolean;
+    ph_continuous: number | undefined;
+    ph_solid: number | null;
+    ph_is_stale: boolean;
+    do_continuous: number | undefined;
+    do_solid: number | null;
+    do_is_stale: boolean;
+    speed_continuous: number;
+    speed_solid: number | null;
+    speed_is_stale: boolean;
+}
+
+const EcosystemDiagnosticTooltip = ({ active, payload, speedThreshold }: { active?: boolean; payload?: { payload: SynchronizedPoint }[]; speedThreshold: number }) => {
     if (!active || !payload || !payload.length) return null;
 
     const data = payload[0].payload;
@@ -63,19 +78,19 @@ const EcosystemDiagnosticTooltip = ({ active, payload, speedThreshold }: any) =>
         status = "Sensors Offline";
         statusColor = "bg-al-mid-gray";
         statusTextColor = "text-al-mid-gray";
-    } else if (data.do_continuous < 4.0 && data.speed_continuous > speedThreshold) {
+    } else if ((data.do_continuous ?? 0) < 4.0 && data.speed_continuous > speedThreshold) {
         status = "Hypoxia Panic / Suffocation Risk";
         statusColor = "bg-[#ff3b30]";
         statusTextColor = "text-[#ff3b30]";
-    } else if (data.temp_continuous > 29.0 && data.do_continuous < 5.0) {
+    } else if ((data.temp_continuous ?? 0) > 29.0 && (data.do_continuous ?? 0) < 5.0) {
         status = "Heat Stress / Depleted Oxygen";
         statusColor = "bg-[#ff9500]";
         statusTextColor = "text-[#ff9500]";
-    } else if (data.temp_continuous < 22.0) {
+    } else if ((data.temp_continuous ?? 0) < 22.0) {
         status = "Cold Shock Risk";
         statusColor = "bg-[#007aff]";
         statusTextColor = "text-[#007aff]";
-    } else if (data.ph_continuous < 6.5 || data.ph_continuous > 8.0) {
+    } else if ((data.ph_continuous ?? 0) < 6.5 || (data.ph_continuous ?? 0) > 8.0) {
         status = "pH Imbalance";
         statusColor = "bg-[#ffcc00]";
         statusTextColor = "text-[#ffcc00]";
@@ -162,35 +177,46 @@ export default function Insights({ logs, timeWindow, setTimeWindow }: InsightsPr
     const synchronizedData = useMemo(() => {
         if (sortedRawLogs.length === 0) return [];
 
-        const cutoffTime = timeWindow === 'all' ? 0 : ticker - (TIME_WINDOWS.find(w => w.id === timeWindow)?.ms ?? Infinity);
+        const activeTimeWindow = TIME_WINDOWS.find(w => w.id === timeWindow);
+        const cutoffTime = timeWindow === 'all' ? 0 : ticker - (activeTimeWindow?.ms ?? Infinity);
 
-        let lastTemp: number | undefined = undefined;
-        let lastPh: number | undefined = undefined;
-        let lastDo: number | undefined = undefined;
-        let lastSpeed: number | undefined = undefined;
+        let initialTemp: number | undefined;
+        let initialPh: number | undefined;
+        let initialDo: number | undefined;
+        let initialSpeed: number | undefined;
 
         for (let i = sortedRawLogs.length - 1; i >= 0; i--) {
             const logTime = new Date(sortedRawLogs[i].timestamp).getTime();
             if (logTime < cutoffTime) {
-                if (lastTemp === undefined && sortedRawLogs[i].temperature != null) lastTemp = sortedRawLogs[i].temperature;
-                if (lastPh === undefined && sortedRawLogs[i].ph != null) lastPh = sortedRawLogs[i].ph;
-                if (lastDo === undefined && sortedRawLogs[i].dissolved_oxygen != null) lastDo = sortedRawLogs[i].dissolved_oxygen;
-                if (lastSpeed === undefined && sortedRawLogs[i].avg_speed != null) lastSpeed = sortedRawLogs[i].avg_speed;
-                if (lastTemp !== undefined && lastPh !== undefined && lastDo !== undefined && lastSpeed !== undefined) break;
+                if (initialTemp === undefined && sortedRawLogs[i].temperature != null) initialTemp = sortedRawLogs[i].temperature;
+                if (initialPh === undefined && sortedRawLogs[i].ph != null) initialPh = sortedRawLogs[i].ph;
+                if (initialDo === undefined && sortedRawLogs[i].dissolved_oxygen != null) initialDo = sortedRawLogs[i].dissolved_oxygen;
+                if (initialSpeed === undefined && sortedRawLogs[i].avg_speed != null) initialSpeed = sortedRawLogs[i].avg_speed;
+                if (initialTemp !== undefined && initialPh !== undefined && initialDo !== undefined && initialSpeed !== undefined) break;
             }
         }
 
         const activeLogs = sortedRawLogs.filter(log => new Date(log.timestamp).getTime() >= cutoffTime);
         const BUCKET_MS = 10000;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const buckets = new Map<number, any>();
+
+        interface Bucket {
+            time: number;
+            temp: number | null;
+            ph: number | null;
+            do: number | null;
+            speed: number | null;
+        }
+
+        const buckets = new Map<number, Bucket>();
 
         activeLogs.forEach(log => {
             const time = new Date(log.timestamp).getTime();
             const bucketTime = Math.floor(time / BUCKET_MS) * BUCKET_MS;
-            if (!buckets.has(bucketTime)) buckets.set(bucketTime, { time: bucketTime, temp: null, ph: null, do: null, speed: null });
+            if (!buckets.has(bucketTime)) {
+                buckets.set(bucketTime, { time: bucketTime, temp: null, ph: null, do: null, speed: null });
+            }
 
-            const b = buckets.get(bucketTime);
+            const b = buckets.get(bucketTime)!;
             if (log.temperature != null) b.temp = log.temperature;
             if (log.ph != null) b.ph = log.ph;
             if (log.dissolved_oxygen != null) b.do = log.dissolved_oxygen;
@@ -206,33 +232,48 @@ export default function Insights({ logs, timeWindow, setTimeWindow }: InsightsPr
             sortedBuckets.push({ time: ticker, temp: null, ph: null, do: null, speed: null });
         }
 
-        // Map into Solid (Active) and Continuous (Dashed/Stale) datasets
-        return sortedBuckets.map(b => {
-            if (b.temp != null) lastTemp = b.temp;
-            if (b.ph != null) lastPh = b.ph;
-            if (b.do != null) lastDo = b.do;
-            if (b.speed != null) lastSpeed = b.speed;
+        interface SyncState {
+            lastTemp: number | undefined;
+            lastPh: number | undefined;
+            lastDo: number | undefined;
+            lastSpeed: number | undefined;
+            points: SynchronizedPoint[];
+        }
 
-            return {
+        // Map into Solid (Active) and Continuous (Dashed/Stale) datasets 
+        // Using reduce to avoid reassigning outer scope variables inside map
+        const finalState = sortedBuckets.reduce<SyncState>((acc, b) => {
+            if (b.temp != null) acc.lastTemp = b.temp;
+            if (b.ph != null) acc.lastPh = b.ph;
+            if (b.do != null) acc.lastDo = b.do;
+            if (b.speed != null) acc.lastSpeed = b.speed;
+
+            acc.points.push({
                 time: b.time,
-
-                temp_continuous: lastTemp,
+                temp_continuous: acc.lastTemp,
                 temp_solid: b.temp,
                 temp_is_stale: b.temp == null,
-
-                ph_continuous: lastPh,
+                ph_continuous: acc.lastPh,
                 ph_solid: b.ph,
                 ph_is_stale: b.ph == null,
-
-                do_continuous: lastDo,
+                do_continuous: acc.lastDo,
                 do_solid: b.do,
                 do_is_stale: b.do == null,
-
-                speed_continuous: lastSpeed !== undefined ? lastSpeed : 0,
+                speed_continuous: acc.lastSpeed !== undefined ? acc.lastSpeed : 0,
                 speed_solid: b.speed,
                 speed_is_stale: b.speed == null,
-            };
+            });
+
+            return acc;
+        }, {
+            lastTemp: initialTemp,
+            lastPh: initialPh,
+            lastDo: initialDo,
+            lastSpeed: initialSpeed,
+            points: []
         });
+
+        return finalState.points;
     }, [sortedRawLogs, timeWindow, ticker]);
 
     const xDomain = useMemo(() => {
